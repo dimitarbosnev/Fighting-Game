@@ -22,7 +22,12 @@ export class Audio {
   #channels = new Map() // id -> Channel
   #nextChannel = 1
 
-  constructor() {
+  #resolve
+
+  // `resolveUrl(url)` maps the URL the game asks for to the file to fetch
+  // (e.g. a compressed .mp3 in place of a .wav).
+  constructor(resolveUrl = (url) => url) {
+    this.#resolve = resolveUrl
     this.#master.connect(this.#context.destination)
 
     // Autoplay policy: resume on the first user gesture anywhere on the page.
@@ -67,6 +72,7 @@ export class Audio {
   }
 
   load(url, loop) {
+    url = this.#resolve(url)
     if (!this.#buffers.has(url)) {
       this.#buffers.set(url, this.#decode(url))
     }

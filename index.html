@@ -3,13 +3,30 @@
 
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kamisen</title>
+  <meta name="description" content="Kamisen, a two-player pixel-art fighting game, running in the browser with WebGPU and WebAssembly." />
+  <link rel="icon" type="image/png" href="assets/Character%20Art/player_1_icon.png" />
   <style>
+    :root {
+      --panel: rgba(12, 12, 16, 0.86);
+      --text: #f2f2f2;
+      --muted: #a8a8b3;
+      --accent: #4fd17a;
+      --accent-text: #08130c;
+      --key: rgba(255, 255, 255, 0.1);
+      --danger: #ff7a7a;
+      color-scheme: dark;
+    }
+
     html,
     body {
       margin: 0;
       height: 100%;
       overflow: hidden;
       background: #000;
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -20,16 +37,176 @@
       aspect-ratio: 16 / 9;
       width: min(100vw, 100vh * 16 / 9);
       height: auto;
+      outline: none;
     }
 
-    /* Master volume (wired up in js/volume_control.js) */
-    .volume {
+    /* ---------------------------------------------------------- start screen */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      overflow: auto;
+      background:
+        linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.8)),
+        url("assets/Background/starting_background.jpg") center / cover no-repeat,
+        #000;
+      transition: opacity 0.25s;
+    }
+
+    .overlay[hidden] {
+      display: none;
+    }
+
+    .panel {
+      width: min(100%, 480px);
+      padding: 24px;
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      text-align: center;
+    }
+
+    .panel h1 {
+      margin: 0;
+      font-size: 32px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .panel .tagline {
+      margin: 4px 0 20px;
+      color: var(--muted);
+    }
+
+    .play {
+      min-width: 180px;
+      padding: 12px 28px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--accent-text);
+      font-family: inherit;
+      font-size: 17px;
+      font-weight: 600;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .play:hover:not(:disabled) {
+      filter: brightness(1.08);
+    }
+
+    .play:focus-visible {
+      outline: 3px solid #fff;
+      outline-offset: 3px;
+    }
+
+    .play:disabled {
+      background: rgba(255, 255, 255, 0.16);
+      color: var(--muted);
+      cursor: progress;
+    }
+
+    .message {
+      margin: 16px 0 0;
+      color: var(--danger);
+      white-space: pre-wrap;
+    }
+
+    .message[hidden] {
+      display: none;
+    }
+
+    .controls {
+      width: 100%;
+      margin-top: 20px;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    .controls caption {
+      margin-bottom: 6px;
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .controls th,
+    .controls td {
+      padding: 4px 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      vertical-align: top;
+    }
+
+    .controls thead th {
+      border-top: 0;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    kbd {
+      display: inline-block;
+      min-width: 1.4em;
+      padding: 0 5px;
+      border-radius: 4px;
+      background: var(--key);
+      font: 12px/1.6 ui-monospace, Consolas, monospace;
+      text-align: center;
+    }
+
+    .note {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* ---------------------------------------------------------- in-game hints */
+    .focus-hint {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      z-index: 5;
+      transform: translateX(-50%);
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--panel);
+      pointer-events: none;
+    }
+
+    .focus-hint[hidden] {
+      display: none;
+    }
+
+    .error {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      margin: 0;
+      padding: 16px;
+      display: grid;
+      place-items: center;
+      background: rgba(0, 0, 0, 0.88);
+      color: var(--danger);
+      font: 13px/1.45 ui-monospace, Consolas, monospace;
+      white-space: pre-wrap;
+    }
+
+    .error[hidden] {
+      display: none;
+    }
+
+    /* ---------------------------------------------------------- toolbar (volume, fullscreen) */
+    .toolbar {
       position: fixed;
       right: 16px;
       bottom: 16px;
+      z-index: 15;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 4px;
       padding: 6px 12px 6px 6px;
       border-radius: 999px;
       background: rgba(20, 20, 24, 0.75);
@@ -40,12 +217,12 @@
       user-select: none;
     }
 
-    .volume:hover,
-    .volume:focus-within {
+    .toolbar:hover,
+    .toolbar:focus-within {
       opacity: 1;
     }
 
-    .volume button {
+    .toolbar button {
       display: grid;
       place-items: center;
       width: 32px;
@@ -58,14 +235,25 @@
       cursor: pointer;
     }
 
-    .volume button:hover,
-    .volume button:focus-visible {
+    .toolbar button:hover,
+    .toolbar button:focus-visible {
       background: rgba(255, 255, 255, 0.12);
     }
 
-    .volume svg {
+    .toolbar button[hidden] {
+      display: none;
+    }
+
+    .toolbar svg {
       width: 20px;
       height: 20px;
+    }
+
+    /* Master volume (wired up in js/volume_control.js) */
+    .volume {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .volume .waves {
@@ -82,7 +270,7 @@
 
     .volume input {
       width: 110px;
-      accent-color: #4fd17a;
+      accent-color: var(--accent);
       cursor: pointer;
     }
 
@@ -91,23 +279,101 @@
       text-align: right;
       font-variant-numeric: tabular-nums;
     }
+
+    :fullscreen .exit-full,
+    .enter-full {
+      display: block;
+    }
+
+    .exit-full,
+    :fullscreen .enter-full {
+      display: none;
+    }
+
+    @media (max-width: 420px) {
+      .volume input {
+        width: 72px;
+      }
+    }
   </style>
 </head>
 
 <body>
-  <canvas id="gameCanvas"></canvas>
+  <canvas id="gameCanvas" aria-label="Kamisen game"></canvas>
 
-  <div class="volume" id="volume">
-    <button type="button" id="volumeMute" aria-label="Mute" title="Mute">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-        stroke-linejoin="round" aria-hidden="true">
-        <path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor" />
-        <path class="waves" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
-        <path class="cross" d="m16 9 6 6M22 9l-6 6" />
+  <div class="overlay" id="startScreen">
+    <div class="panel">
+      <h1>Kamisen</h1>
+      <p class="tagline">A two-player pixel-art fighting game</p>
+      <button class="play" id="playButton" type="button" disabled>Loading…</button>
+      <p class="message" id="startMessage" hidden></p>
+
+      <table class="controls">
+        <caption>Two players share one keyboard</caption>
+        <thead>
+          <tr>
+            <th scope="col"></th>
+            <th scope="col">Player 1</th>
+            <th scope="col">Player 2</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Move / jump / crouch</th>
+            <td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td>
+            <td><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></td>
+          </tr>
+          <tr>
+            <th scope="row">Light / heavy punch</th>
+            <td><kbd>Z</kbd> <kbd>X</kbd></td>
+            <td><kbd>H</kbd> <kbd>J</kbd></td>
+          </tr>
+          <tr>
+            <th scope="row">Light / heavy kick</th>
+            <td><kbd>C</kbd> <kbd>V</kbd></td>
+            <td><kbd>K</kbd> <kbd>L</kbd></td>
+          </tr>
+          <tr>
+            <th scope="row">Confirm in menus</th>
+            <td><kbd>C</kbd></td>
+            <td><kbd>K</kbd></td>
+          </tr>
+          <tr>
+            <th scope="row">Insert coin / pause</th>
+            <td colspan="2"><kbd>P</kbd></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="note">Hold back to block. Built in C# (GXPEngine), compiled to WebAssembly.</p>
+    </div>
+  </div>
+
+  <div class="focus-hint" id="focusHint" hidden>Click the game to keep playing</div>
+  <pre class="error" id="errorMessage" role="alert" hidden></pre>
+
+  <div class="toolbar">
+    <div class="volume" id="volume">
+      <button type="button" id="volumeMute" aria-label="Mute" title="Mute">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor" />
+          <path class="waves" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+          <path class="cross" d="m16 9 6 6M22 9l-6 6" />
+        </svg>
+      </button>
+      <input type="range" id="volumeSlider" min="0" max="100" step="1" value="80" aria-label="Master volume" />
+      <output id="volumeValue" for="volumeSlider">80%</output>
+    </div>
+    <button type="button" id="fullscreenButton" aria-label="Fullscreen" title="Fullscreen" hidden>
+      <svg class="enter-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+      </svg>
+      <svg class="exit-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
       </svg>
     </button>
-    <input type="range" id="volumeSlider" min="0" max="100" step="1" value="80" aria-label="Master volume" />
-    <output id="volumeValue" for="volumeSlider">80%</output>
   </div>
 
   <script type="module" src="js/engine.js"></script>

@@ -26,6 +26,27 @@
             }
         },
         {
+            // Self-contained dist/ folder for a portfolio site or any static host (see README.md).
+            "label": "Build portfolio (dist)",
+            "type": "process",
+            "command": "${workspaceFolder}/.tools/dotnet/dotnet.exe",
+            "args": [
+                "publish",
+                "${workspaceFolder}/GXPEngine/GXPEngine.csproj",
+                "-c",
+                "Release",
+                "-p:WebDist=true",
+                "-nologo"
+            ],
+            "options": {
+                "env": {
+                    "DOTNET_CLI_TELEMETRY_OPTOUT": "1"
+                }
+            },
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
             "label": "Build WASM (debug)",
             "type": "process",
             "command": "${workspaceFolder}/.tools/dotnet/dotnet.exe",

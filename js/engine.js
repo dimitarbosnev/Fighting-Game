@@ -6,6 +6,7 @@ import { init_renderer_2d, preloadImages, loadTexture_2d, textureSize, freeTextu
 import { canvasImports, flush as flushCanvases, forget as forgetCanvas } from './canvas_2d.js'
 import { Audio } from './audio.js'
 import { initVolumeControl } from './volume_control.js'
+import { initPage } from './page.js'
 import {
   cubeVertexArray,
   cubeVertexSize,
@@ -14,28 +15,25 @@ import {
   cubeVertexCount,
 } from './cube.js'
 
-// Status / error text over the canvas (loading progress, crash reports).
-const status = document.createElement('pre')
-status.style.cssText = 'position:fixed;inset:0;margin:0;padding:16px;display:flex;align-items:center;' +
-  'justify-content:center;color:#ddd;font:14px/1.4 monospace;white-space:pre-wrap;pointer-events:none'
-document.body.append(status)
-const showStatus = (text) => { status.textContent = text }
-function showError(text) {
-  status.style.color = '#f66'
-  status.style.background = 'rgba(0,0,0,0.85)'
-  status.style.pointerEvents = 'auto'
-  showStatus(text)
+//Page init (start screen, errors, fullscreen: see page.js and index.html)
+const canvas = document.getElementById('gameCanvas')
+const page = initPage(canvas)
+const showError = (text) => page.error(text)
+
+function unsupported(reason) {
+  page.unsupported(`${reason}\n\nThis game needs WebGPU: a recent Chrome or Edge, Safari 26+, or Firefox 141+ on Windows.`)
+  throw new Error(reason)
 }
+//----------------------
 
 //Context + Device init
-const canvas = document.getElementById('gameCanvas')
-if (!navigator.gpu) throw new Error("WebGPU is not supported in this browser")
+if (!navigator.gpu) unsupported("WebGPU is not available in this browser.")
 const adapter = await navigator.gpu.requestAdapter({
   powerPreference: "high-performance",
 
 })
-if (!adapter) throw new Error("No suitable GPU adapter found")
-const device = await adapter.requestDevice()
+if (!adapter) unsupported("No WebGPU graphics adapter was found (WebGPU may be disabled, or the GPU is not supported).")
+const device = await adapter.requestDevice().catch((err) => unsupported(`The WebGPU device could not be created (${err.message}).`))
 const context = canvas.getContext('webgpu')
 
 const devicePixelRatio = window.devicePixelRatio
@@ -55,6 +53,7 @@ try {
   await init_renderer_2d(device, presentationFormat)
 } catch (err) {
   console.error("Renderer failed to initialize:", err)
+  showError(`The renderer failed to initialize (${err.message}).`)
   throw err
 }
 //----------------------
@@ -80,8 +79,20 @@ resize_2d(canvas.width, canvas.height)
 const ASSETS_URL = "assets/"
 const manifest = await fetch(ASSETS_URL + "manifest.json").then((r) => (r.ok ? r.json() : []), () => [])
 const assetUrls = (pattern) => manifest.filter((file) => pattern.test(file)).map((file) => ASSETS_URL + file)
+
+// The portfolio build (dist/) may ship compressed audio: the game still asks for
+// "x.wav", and gets "x.mp3" when that is what the manifest lists.
+const manifestFiles = new Set(manifest)
+function resolveAsset(url) {
+  if (!url.startsWith(ASSETS_URL) || manifestFiles.size === 0) return url
+  const file = url.slice(ASSETS_URL.length)
+  if (manifestFiles.has(file)) return url
+  const mp3 = file.replace(/\.wav$/i, ".mp3")
+  return manifestFiles.has(mp3) ? ASSETS_URL + mp3 : url
+}
+
 await Promise.all([
-  preloadImages(assetUrls(/\.(png|jpe?g|gif|webp|bmp)$/i), (done, total) => showStatus(`Loading images ${done}/${total}`)),
+  preloadImages(assetUrls(/\.(png|jpe?g|gif|webp|bmp)$/i), (done, total) => page.progress(`Loading ${Math.round(done / total * 100)}%`)),
   ...assetUrls(/\.(ttf|otf|woff2?)$/i).map(async (url) => {
     const family = decodeURIComponent(url.split("/").pop().replace(/\.[^.]+$/, ""))
     try {
@@ -91,12 +102,11 @@ await Promise.all([
     }
   }),
 ])
-showStatus("")
 //----------------------
 
 //WASM init
 const WASM_URL = "wasm/game.wasm"
-const audio = new Audio()
+const audio = new Audio(resolveAsset)
 initVolumeControl(audio, canvas)
 const { exports, mem, recentOutput } = await loadWasm(WASM_URL, (mem) => ({
   // Functions the game imports from the "engine" module (GXPEngine/GXPEngine/Web/Host.cs).
@@ -156,7 +166,7 @@ function frame(now) {
 }
 
 //Main function
-canvas.focus()
+await page.waitForPlay() // the click also unlocks audio and focuses the canvas
 try {
   exports._start()
   requestAnimationFrame(frame)

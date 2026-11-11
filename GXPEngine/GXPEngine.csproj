@@ -9,6 +9,15 @@
       assets/...            a copy of GXPEngine/Assets, fetched by the JS host at runtime
       assets/manifest.json  every file under assets/, so the host can preload images and fonts
 
+    Portfolio / hosting build: a self-contained dist/ folder to copy to any static host.
+
+      dotnet publish GXPEngine/GXPEngine.csproj -c Release -p:WebDist=true
+
+    dist/ is deleted and rebuilt each time. It gets index.html, js/, shaders/,
+    wasm/game.wasm without debug info, and assets/. If ffmpeg is found (FFmpegPath,
+    .tools/ffmpeg/bin, or PATH), music and voice lines are converted to MP3; the
+    page picks the .mp3 when the game asks for the .wav.
+
     Toolchain (installed repo-locally in .tools/, which is gitignored):
       - .NET 10 SDK in .tools/dotnet (from https://dot.net/v1/dotnet-install.ps1 -Channel 10.0)
       - WASI SDK 29 in .tools/wasi-sdk, found through WASI_SDK_PATH (defaults to that folder)
@@ -46,6 +55,14 @@
     <WASI_SDK_PATH Condition="'$(WASI_SDK_PATH)' == ''">$(RepoRoot).tools/wasi-sdk</WASI_SDK_PATH>
     <WebWasmDir>$(RepoRoot)wasm/</WebWasmDir>
     <WebAssetsDir>$(RepoRoot)assets/</WebAssetsDir>
+    <WebDistDir>$(RepoRoot)dist/</WebDistDir>
+  </PropertyGroup>
+
+  <!-- The portfolio build ships without debug info (much smaller; crash traces lose method names). -->
+  <PropertyGroup Condition="'$(WebDist)' == 'true'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <NativeDebugSymbols>false</NativeDebugSymbols>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -68,11 +85,21 @@
     <None Remove="bin\**;obj\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Files under Assets/ the game never loads; they are not published. -->
+    <WebAssetExclude Include="$(MSBuildProjectDirectory)\Assets\Sound\Street fighter\**\*" />
+
+    <!-- Large WAVs the portfolio build converts to MP3. Sound effects stay WAV: they are
+         small, and MP3's encoder delay would make hits sound slightly late. -->
+    <WebDistCompress Include="$(MSBuildProjectDirectory)\Assets\Sound\Music\**\*.wav" Folder="Sound\Music\" />
+    <WebDistCompress Include="$(MSBuildProjectDirectory)\Assets\Sound\VoiceLines\**\*.wav" Folder="Sound\VoiceLines\" />
+  </ItemGroup>
+
   <!-- After publishing: put game.wasm next to index.html and mirror Assets/ into assets/. -->
   <Target Name="CopyToWebRoot" AfterTargets="Publish">
     <ItemGroup>
       <_GameWasm Include="$(PublishDir)$(AssemblyName).wasm" />
-      <_GameAssets Include="$(MSBuildProjectDirectory)\Assets\**\*" />
+      <_GameAssets Include="$(MSBuildProjectDirectory)\Assets\**\*" Exclude="@(WebAssetExclude)" />
       <_ManifestEntry Include="@(_GameAssets->'%(RecursiveDir)%(Filename)%(Extension)'->Replace('\', '/'))" />
     </ItemGroup>
     <Error Condition="!Exists('@(_GameWasm)')" Text="Expected the published module at @(_GameWasm)." />
@@ -89,5 +116,60 @@
     <WriteLinesToFile File="$(WebAssetsDir)manifest.json" Lines="$(_ManifestJson)" Overwrite="true" WriteOnlyWhenDifferent="true" />
 
     <Message Importance="high" Text="Web build: $(WebWasmDir)game.wasm, @(_GameAssets->Count()) assets in $(WebAssetsDir)" />
+  </Target>
+
+  <!-- ==================================================================== dist/ (WebDist=true) -->
+
+  <Target Name="_FindFFmpeg" Condition="'$(WebDist)' == 'true'">
+    <PropertyGroup>
+      <FFmpegPath Condition="'$(FFmpegPath)' == '' and Exists('$(RepoRoot).tools/ffmpeg/bin/ffmpeg.exe')">$(RepoRoot).tools/ffmpeg/bin/ffmpeg.exe</FFmpegPath>
+    </PropertyGroup>
+    <Exec Condition="'$(FFmpegPath)' == ''" Command="ffmpeg -hide_banner -version" EchoOff="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="_FFmpegOnPathExitCode" />
+    </Exec>
+    <PropertyGroup>
+      <FFmpegPath Condition="'$(FFmpegPath)' == '' and '$(_FFmpegOnPathExitCode)' == '0'">ffmpeg</FFmpegPath>
+      <_DistAudioCache>$(MSBuildProjectDirectory)\obj\web-audio\</_DistAudioCache>
+    </PropertyGroup>
+    <Warning Condition="'$(FFmpegPath)' == ''" Text="ffmpeg not found: dist/ keeps the original WAV music (about 75 MB). Install ffmpeg (e.g. winget install Gyan.FFmpeg) or pass -p:FFmpegPath=... to compress it to MP3." />
+  </Target>
+
+  <!-- Converts each WAV once; later builds only redo files that changed. -->
+  <Target Name="_CompressDistAudio" DependsOnTargets="_FindFFmpeg" Condition="'$(WebDist)' == 'true'"
+          Inputs="@(WebDistCompress)" Outputs="@(WebDistCompress->'$(MSBuildProjectDirectory)\obj\web-audio\%(Folder)%(RecursiveDir)%(Filename).mp3')">
+    <MakeDir Condition="'$(FFmpegPath)' != ''" Directories="@(WebDistCompress->'$(_DistAudioCache)%(Folder)%(RecursiveDir)')" />
+    <Exec Condition="'$(FFmpegPath)' != ''"
+          Command="&quot;$(FFmpegPath)&quot; -hide_banner -loglevel error -y -i &quot;%(WebDistCompress.FullPath)&quot; -codec:a libmp3lame -q:a 4 &quot;$(_DistAudioCache)%(WebDistCompress.Folder)%(WebDistCompress.RecursiveDir)%(WebDistCompress.Filename).mp3&quot;" />
+  </Target>
+
+  <Target Name="BuildWebDist" AfterTargets="CopyToWebRoot" DependsOnTargets="_CompressDistAudio" Condition="'$(WebDist)' == 'true'">
+    <ItemGroup>
+      <_DistPage Include="$(RepoRoot)index.html" />
+      <_DistJs Include="$(RepoRoot)js\*.js" />
+      <_DistShaders Include="$(RepoRoot)shaders\*.wgsl" />
+      <_DistAssets Include="$(MSBuildProjectDirectory)\Assets\**\*" Exclude="@(WebAssetExclude)" />
+      <_DistAssets Remove="@(WebDistCompress)" Condition="'$(FFmpegPath)' != ''" />
+      <_DistMp3 Include="@(WebDistCompress->'$(_DistAudioCache)%(Folder)%(RecursiveDir)%(Filename).mp3')" Condition="'$(FFmpegPath)' != ''" />
+      <_DistManifestEntry Include="@(_DistAssets->'%(RecursiveDir)%(Filename)%(Extension)'->Replace('\', '/'))" />
+      <_DistManifestEntry Include="@(WebDistCompress->'%(Folder)%(RecursiveDir)%(Filename).mp3'->Replace('\', '/'))" Condition="'$(FFmpegPath)' != ''" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(WebDistDir)" />
+    <Copy SourceFiles="@(_DistPage)" DestinationFolder="$(WebDistDir)" />
+    <Copy SourceFiles="@(_DistJs)" DestinationFolder="$(WebDistDir)js" />
+    <Copy SourceFiles="@(_DistShaders)" DestinationFolder="$(WebDistDir)shaders" />
+    <Copy SourceFiles="$(WebWasmDir)game.wasm" DestinationFolder="$(WebDistDir)wasm" />
+    <Copy SourceFiles="@(_DistAssets)" DestinationFiles="@(_DistAssets->'$(WebDistDir)assets\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(_DistMp3)" DestinationFiles="@(WebDistCompress->'$(WebDistDir)assets\%(Folder)%(RecursiveDir)%(Filename).mp3')" Condition="'$(FFmpegPath)' != ''" />
+
+    <PropertyGroup>
+      <_DistManifestJson>[
+  &quot;@(_DistManifestEntry, '&quot;,
+  &quot;')&quot;
+]</_DistManifestJson>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(WebDistDir)assets\manifest.json" Lines="$(_DistManifestJson)" Overwrite="true" />
+
+    <Message Importance="high" Text="Portfolio build: $(WebDistDir) (copy this folder to your site and embed its index.html in an iframe)" />
   </Target>
 </Project>

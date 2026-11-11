@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Kamisen: a GXPEngine game built for the browser.
+
+      dotnet publish Kamisen.csproj -c Release                    -> web/   (test locally)
+      dotnet publish Kamisen.csproj -c Release -p:WebDist=true    -> dist/  (copy to a website)
+
+    The engine is a dependency: GXPEngine.Web.targets references GXPEngine/GXPEngine.csproj
+    and compiles both into one wasm module. See GXPEngine/GXPEngine.Web.targets for options.
+  -->
+  <PropertyGroup>
+    <AssemblyName>Kamisen</AssemblyName>
+    <RootNamespace>Kamisen</RootNamespace>
+
+    <GameTitle>Kamisen</GameTitle>
+    <GameDescription>A two-player pixel-art fighting game</GameDescription>
+    <GameCover>Assets/Background/starting_background.jpg</GameCover>
+    <GameIcon>Assets/Character Art/player_1_icon.png</GameIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Not used by the game, so not published. -->
+    <WebContentExclude Include="Content\Assets\Sound\Street fighter\**\*" />
+
+    <!-- Shipped as MP3 in dist/ when ffmpeg is available (sound effects stay WAV: MP3's
+         encoder delay would make hits sound slightly late). -->
+    <WebDistCompress Include="Content\Assets\Sound\Music\**\*.wav" />
+    <WebDistCompress Include="Content\Assets\Sound\VoiceLines\**\*.wav" />
+  </ItemGroup>
+
+  <Import Project="GXPEngine\GXPEngine.Web.targets" />
+</Project>

@@ -3,6 +3,16 @@
 A two-player pixel-art fighting game written in C# on GXPEngine, compiled to
 WebAssembly with .NET NativeAOT-LLVM and rendered with WebGPU.
 
+## Layout
+
+| Path | What |
+|---|---|
+| `Kamisen.csproj` | the game project; imports the engine with one line |
+| `MyGame.cs`, `Game Files/` | game code |
+| `Content/` | what used to sit next to the exe: `Assets/`, the `.tmx` levels |
+| `controls.html` | controls table on the start screen |
+| `GXPEngine/` | the engine, reusable by other games (see [GXPEngine/README.md](GXPEngine/README.md)) |
+
 ## Build
 
 Requires the repo-local toolchain in `.tools/` (gitignored): the .NET 10 SDK in
@@ -10,11 +20,11 @@ Requires the repo-local toolchain in `.tools/` (gitignored): the .NET 10 SDK in
 
 | VS Code task | Command | Output |
 |---|---|---|
-| Build WASM (release) | `.tools/dotnet/dotnet publish GXPEngine/GXPEngine.csproj -c Release` | `wasm/game.wasm` and `assets/` next to `index.html`, for local testing |
-| Build portfolio (dist) | `.tools/dotnet/dotnet publish GXPEngine/GXPEngine.csproj -c Release -p:WebDist=true` | `dist/`, a self-contained copy of the site |
+| Build WASM (release) | `.tools/dotnet/dotnet publish Kamisen.csproj -c Release` | `web/`, for local testing |
+| Build portfolio (dist) | `.tools/dotnet/dotnet publish Kamisen.csproj -c Release -p:WebDist=true` | `dist/`, a self-contained copy of the site |
 
-Serve the repository root (or `dist/`) with any static web server; opening
-`index.html` from the file system does not work, because the page fetches its files.
+Serve `web/` (or `dist/`) with any static web server; opening `index.html` from
+the file system does not work, because the page fetches its files.
 
 ## Adding it to a website
 

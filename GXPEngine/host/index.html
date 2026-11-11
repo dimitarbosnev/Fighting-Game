@@ -4,9 +4,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kamisen</title>
-  <meta name="description" content="Kamisen, a two-player pixel-art fighting game, running in the browser with WebGPU and WebAssembly." />
-  <link rel="icon" type="image/png" href="assets/Character%20Art/player_1_icon.png" />
+  <!-- Template: GXPEngine.Web.targets fills the {{...}} fields from the game's project. -->
+  <title>{{TITLE}}</title>
+  <meta name="description" content="{{DESCRIPTION}}" />
+  {{ICON}}
   <style>
     :root {
       --panel: rgba(12, 12, 16, 0.86);
@@ -51,7 +52,7 @@
       overflow: auto;
       background:
         linear-gradient(rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.8)),
-        url("assets/Background/starting_background.jpg") center / cover no-repeat,
+        var(--cover, none) center / cover no-repeat,
         #000;
       transition: opacity 0.25s;
     }
@@ -79,6 +80,11 @@
     .panel .tagline {
       margin: 4px 0 20px;
       color: var(--muted);
+    }
+
+    .panel .tagline:empty {
+      margin-bottom: 16px;
+      visibility: hidden;
     }
 
     .play {
@@ -299,52 +305,15 @@
 </head>
 
 <body>
-  <canvas id="gameCanvas" aria-label="Kamisen game"></canvas>
+  <canvas id="gameCanvas" aria-label="Game"></canvas>
 
-  <div class="overlay" id="startScreen">
+  <div class="overlay" id="startScreen"{{COVER}}>
     <div class="panel">
-      <h1>Kamisen</h1>
-      <p class="tagline">A two-player pixel-art fighting game</p>
+      <h1>{{TITLE}}</h1>
+      <p class="tagline">{{DESCRIPTION}}</p>
       <button class="play" id="playButton" type="button" disabled>Loading…</button>
       <p class="message" id="startMessage" hidden></p>
-
-      <table class="controls">
-        <caption>Two players share one keyboard</caption>
-        <thead>
-          <tr>
-            <th scope="col"></th>
-            <th scope="col">Player 1</th>
-            <th scope="col">Player 2</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <th scope="row">Move / jump / crouch</th>
-            <td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td>
-            <td><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></td>
-          </tr>
-          <tr>
-            <th scope="row">Light / heavy punch</th>
-            <td><kbd>Z</kbd> <kbd>X</kbd></td>
-            <td><kbd>H</kbd> <kbd>J</kbd></td>
-          </tr>
-          <tr>
-            <th scope="row">Light / heavy kick</th>
-            <td><kbd>C</kbd> <kbd>V</kbd></td>
-            <td><kbd>K</kbd> <kbd>L</kbd></td>
-          </tr>
-          <tr>
-            <th scope="row">Confirm in menus</th>
-            <td><kbd>C</kbd></td>
-            <td><kbd>K</kbd></td>
-          </tr>
-          <tr>
-            <th scope="row">Insert coin / pause</th>
-            <td colspan="2"><kbd>P</kbd></td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="note">Hold back to block. Built in C# (GXPEngine), compiled to WebAssembly.</p>
+      {{CONTROLS}}
     </div>
   </div>
 

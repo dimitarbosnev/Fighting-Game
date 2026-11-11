@@ -72,11 +72,12 @@ resize_2d(canvas.width, canvas.height)
 //----------------------
 
 //Asset preload
-// The build writes assets/manifest.json listing every file under assets/. Images
+// The build writes content/manifest.json listing every file under content/ (the
+// game's Content folder, minus data files compiled into the module). Images
 // are decoded up front so the game knows their sizes the moment it creates a
 // sprite, and fonts are registered under their file name ("Retro Gaming.ttf" ->
 // font-family "Retro Gaming"). Sounds load on demand (see audio.js).
-const ASSETS_URL = "assets/"
+const ASSETS_URL = "content/"
 const manifest = await fetch(ASSETS_URL + "manifest.json").then((r) => (r.ok ? r.json() : []), () => [])
 const assetUrls = (pattern) => manifest.filter((file) => pattern.test(file)).map((file) => ASSETS_URL + file)
 

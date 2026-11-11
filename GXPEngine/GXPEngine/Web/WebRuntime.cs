@@ -123,11 +123,14 @@ namespace GXPEngine.Web
 			};
 		}
 
-		// ------------------------------------------------------------ exports
+		/// <summary>The game's assembly, set by Start (from the game's generated WebEntry).</summary>
+		public static Assembly GameAssembly { get; private set; }
 
-		/// <summary>Where the shared structs live. JS calls this once, before _start.</summary>
-		[UnmanagedCallersOnly(EntryPoint = "engine_layout")]
-		static uint EngineLayout() {
+		// ------------------------------------------------------------ exports
+		// The wasm exports themselves are in build/WebEntry.cs, compiled into the game.
+
+		/// <summary>Where the shared structs live. JS calls this once (engine_layout), before _start.</summary>
+		public static uint GetLayout() {
 			try {
 				Allocate();
 				return (uint)_layout;
@@ -138,14 +141,14 @@ namespace GXPEngine.Web
 		}
 
 		/// <summary>
-		/// Runs the game's static Main(), which creates the Game and calls Start().
+		/// Runs the game's static Main(), which creates the Game and calls Start() (_start).
 		/// Start() returns immediately: from then on the JS host drives frames.
 		/// </summary>
-		[UnmanagedCallersOnly(EntryPoint = "_start")]
-		static void Start() {
+		public static void Start(Assembly gameAssembly) {
 			try {
+				GameAssembly = gameAssembly;
 				Allocate();
-				MethodInfo main = FindMain();
+				MethodInfo main = FindMain(gameAssembly);
 				if (main == null) throw new Exception("No static Main() found on a class deriving from GXPEngine.Game.");
 				main.Invoke(null, main.GetParameters().Length == 0 ? null : new object[] { new string[0] });
 			} catch (Exception e) {
@@ -153,9 +156,8 @@ namespace GXPEngine.Web
 			}
 		}
 
-		/// <summary>Called by JS once per animation frame, after it has written this frame's input.</summary>
-		[UnmanagedCallersOnly(EntryPoint = "engine_frame")]
-		static void EngineFrame(float dt) {
+		/// <summary>Called by JS once per animation frame (engine_frame), after it has written this frame's input.</summary>
+		public static void RunFrame(float dt) {
 			if (_crashed) return;
 			try {
 				_frame->instanceCount = 0;
@@ -175,9 +177,9 @@ namespace GXPEngine.Web
 			Environment.FailFast(e.GetType().Name + ": " + e.Message);
 		}
 
-		static MethodInfo FindMain() {
+		static MethodInfo FindMain(Assembly gameAssembly) {
 			const BindingFlags flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
-			foreach (Type type in typeof(WebRuntime).Assembly.GetTypes()) {
+			foreach (Type type in gameAssembly.GetTypes()) {
 				if (!type.IsSubclassOf(typeof(Game))) continue;
 				MethodInfo main = type.GetMethod("Main", flags);
 				if (main != null) return main;

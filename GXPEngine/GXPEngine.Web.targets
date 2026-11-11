@@ -1,0 +1,240 @@
+<Project>
+  <!--
+    GXPEngine.Web.targets: turns a GXPEngine game project into a browser game.
+
+    Import it in the game's .csproj (after the properties you want to set):
+
+      <Project Sdk="Microsoft.NET.Sdk">
+        <PropertyGroup>
+          <GameTitle>My Game</GameTitle>
+        </PropertyGroup>
+        <Import Project="GXPEngine\GXPEngine.Web.targets" />
+      </Project>
+
+    The engine's source (GXPEngine/ next to this file) is compiled together with the game,
+    into ONE assembly and ONE WebAssembly module (NativeAOT-LLVM):
+
+      dotnet publish MyGame.csproj -c Release                    -> web/   (play/test locally)
+      dotnet publish MyGame.csproj -c Release -p:WebDist=true    -> dist/  (copy to a website)
+
+    Game layout (all optional except the code):
+      *.cs                 game code (anything outside the engine and output folders)
+      Content/             what used to sit next to the exe in bin/Debug: Assets/, *.tmx, settings.txt, ...
+                           Media is published to content/, data files are compiled into the module.
+      controls.html        HTML shown on the start screen under the Play button (e.g. a controls table)
+
+    Properties a game can set (defaults in brackets):
+      GameTitle            page title and start screen heading [AssemblyName]
+      GameDescription      page description and start screen tagline [empty]
+      GameCover            start screen background, a path inside Content/ [none]
+      GameIcon             favicon, a path inside Content/ [none]
+      GameControlsFile     start screen HTML fragment [controls.html]
+      GameContentDir       [Content/]
+      WebOutDir / WebDistDir                            [web/ and dist/, next to the game project]
+      FFmpegPath           used by WebDist=true to compress WebDistCompress items to MP3 [.tools/ffmpeg or PATH]
+    Items a game can add:
+      WebContentExclude    content files not to publish
+      WebDistCompress      WAV files to ship as MP3 in dist/ (the page swaps .wav requests for .mp3)
+      GameData             extra data files to compile into the module (default: *.tmx;*.tsx;*.txt;*.xml;*.json;*.csv)
+
+    Toolchain: .NET 10 SDK, and WASI SDK 29 found through WASI_SDK_PATH or a .tools/wasi-sdk
+    folder in the game directory or any folder above it.
+  -->
+
+  <PropertyGroup>
+    <GXPEngineDir>$(MSBuildThisFileDirectory)</GXPEngineDir>
+
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0</TargetFramework>
+    <LangVersion Condition="'$(LangVersion)' == ''">latest</LangVersion>
+    <Nullable Condition="'$(Nullable)' == ''">disable</Nullable>
+    <ImplicitUsings Condition="'$(ImplicitUsings)' == ''">disable</ImplicitUsings>
+    <GenerateAssemblyInfo Condition="'$(GenerateAssemblyInfo)' == ''">false</GenerateAssemblyInfo>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Typical warnings in older GXPEngine game code, and reflection notes the trimmer raises
+         even though the game assembly is rooted below. -->
+    <NoWarn>$(NoWarn);CS0108;CS0114;CS0162;CS0168;CS0169;CS0219;CS0414;CS0649;CS0618;CS8981;CA2200;IL2026;IL2057;IL2058;IL2065;IL2070;IL2072;IL2075;IL2077;IL2080;IL2104;IL3050;IL3053</NoWarn>
+
+    <!-- NativeAOT-LLVM: a WASI "reactor" module whose exports (build/WebEntry.cs) the JS host calls. -->
+    <OutputType>Library</OutputType>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <NativeLib>Shared</NativeLib>
+    <!-- Plain wasm-ld output: a core module browsers can instantiate, not a WASI component. -->
+    <LinkerFlavor>lld</LinkerFlavor>
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <InvariantTimezone>true</InvariantTimezone>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <!-- Content is local XML: keep System.Xml from linking in an HTTP client (wasi:http). -->
+    <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+
+    <!-- NativeAOT-LLVM is only published to the dotnet-experimental feed. -->
+    <GXPIlcLlvmVersion Condition="'$(GXPIlcLlvmVersion)' == ''">10.0.0-rc.1.26357.1</GXPIlcLlvmVersion>
+    <RestoreAdditionalProjectSources>$(RestoreAdditionalProjectSources);https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json</RestoreAdditionalProjectSources>
+
+    <_GXPToolsRoot>$([MSBuild]::GetDirectoryNameOfFileAbove('$(MSBuildProjectDirectory)', '.tools/wasi-sdk/VERSION'))</_GXPToolsRoot>
+    <WASI_SDK_PATH Condition="'$(WASI_SDK_PATH)' == '' and '$(_GXPToolsRoot)' != ''">$(_GXPToolsRoot)/.tools/wasi-sdk</WASI_SDK_PATH>
+
+    <GameContentDir Condition="'$(GameContentDir)' == ''">$(MSBuildProjectDirectory)\Content\</GameContentDir>
+    <GameContentDir>$([MSBuild]::EnsureTrailingSlash('$(GameContentDir)'))</GameContentDir>
+    <GameControlsFile Condition="'$(GameControlsFile)' == ''">$(MSBuildProjectDirectory)\controls.html</GameControlsFile>
+    <WebOutDir Condition="'$(WebOutDir)' == ''">$(MSBuildProjectDirectory)\web\</WebOutDir>
+    <WebDistDir Condition="'$(WebDistDir)' == ''">$(MSBuildProjectDirectory)\dist\</WebDistDir>
+  </PropertyGroup>
+
+  <!-- dist/ ships without debug info: a much smaller module, but crash traces lose method names. -->
+  <PropertyGroup Condition="'$(WebDist)' == 'true'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <NativeDebugSymbols>false</NativeDebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="$(GXPIlcLlvmVersion)" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="$(GXPIlcLlvmVersion)" />
+
+    <!-- The engine is compiled into the game's own assembly, like GXPEngine projects always
+         did, so game code can keep using the engine's internal members. Only the engine's
+         C# source and the wasm exports (build/WebEntry.cs) are taken from GXPEngineDir. -->
+    <Compile Remove="$(GXPEngineDir)**\*.cs" />
+    <Compile Include="$(GXPEngineDir)GXPEngine\**\*.cs" Link="GXPEngine\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="$(GXPEngineDir)build\WebEntry.cs" Link="GXPEngine\WebEntry.cs" />
+    <Compile Remove="web\**;dist\**;.tools\**;bin\**;obj\**" />
+    <None Remove="web\**;dist\**;.tools\**" />
+
+    <!-- Tiled creates objects by class name, and the managers find Update() / OnCollision()
+         by reflection, so nothing in the game (or engine) may be trimmed away. -->
+    <TrimmerRootAssembly Include="$(AssemblyName)" />
+
+    <!-- Data files the game reads synchronously (levels, settings), compiled into the module. -->
+    <GameData Include="$(GameContentDir)**\*.tmx;$(GameContentDir)**\*.tsx;$(GameContentDir)**\*.txt;$(GameContentDir)**\*.xml;$(GameContentDir)**\*.json;$(GameContentDir)**\*.csv" />
+  </ItemGroup>
+
+  <!-- Embed GameData as "content/<path inside Content>", which ContentFiles looks up. -->
+  <Target Name="_GXPEmbedGameData" BeforeTargets="PrepareForBuild;AssignTargetPaths">
+    <ItemGroup>
+      <EmbeddedResource Include="@(GameData)">
+        <LogicalName>content/$([MSBuild]::MakeRelative('$(GameContentDir)', '%(FullPath)').Replace('\', '/'))</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
+
+  <!-- Writes index.html from host/index.html and the manifest of published content. -->
+  <UsingTask TaskName="GXPWriteWebFiles" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <PageTemplate ParameterType="System.String" Required="true" />
+      <PageOutput ParameterType="System.String" Required="true" />
+      <ManifestOutput ParameterType="System.String" Required="true" />
+      <ContentFiles ParameterType="System.String[]" />
+      <Title ParameterType="System.String" />
+      <Description ParameterType="System.String" />
+      <Icon ParameterType="System.String" />
+      <Cover ParameterType="System.String" />
+      <ControlsFile ParameterType="System.String" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Linq" />
+      <Using Namespace="System.Net" />
+      <Using Namespace="System.Text" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        Func<string, string> url = p => "content/" + string.Join("/", (p ?? "").Replace('\\', '/').Split('/').Select(Uri.EscapeDataString));
+        Func<string, string> html = s => WebUtility.HtmlEncode(s ?? "");
+        string controls = !string.IsNullOrEmpty(ControlsFile) && File.Exists(ControlsFile) ? File.ReadAllText(ControlsFile) : "";
+        string page = File.ReadAllText(PageTemplate)
+          .Replace("{{TITLE}}", html(Title))
+          .Replace("{{DESCRIPTION}}", html(Description))
+          .Replace("{{ICON}}", string.IsNullOrEmpty(Icon) ? "" : "<link rel=\"icon\" href=\"" + html(url(Icon)) + "\" />")
+          .Replace("{{COVER}}", string.IsNullOrEmpty(Cover) ? "" : " style=\"--cover: url('" + html(url(Cover)) + "')\"")
+          .Replace("{{CONTROLS}}", controls);
+        Directory.CreateDirectory(Path.GetDirectoryName(PageOutput));
+        File.WriteAllText(PageOutput, page, new UTF8Encoding(false));
+
+        var json = new StringBuilder("[\n");
+        var files = (ContentFiles ?? new string[0]).Select(f => f.Replace('\\', '/')).OrderBy(f => f, StringComparer.Ordinal).ToArray();
+        for (int i = 0; i < files.Length; i++) {
+          json.Append("  \"").Append(files[i].Replace("\\", "\\\\").Replace("\"", "\\\"")).Append(i + 1 < files.Length ? "\",\n" : "\"\n");
+        }
+        json.Append("]\n");
+        Directory.CreateDirectory(Path.GetDirectoryName(ManifestOutput));
+        File.WriteAllText(ManifestOutput, json.ToString(), new UTF8Encoding(false));
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Finds ffmpeg for WebDist=true (only needed when the game lists WebDistCompress items). -->
+  <Target Name="_GXPFindFFmpeg" Condition="'$(WebDist)' == 'true' and '@(WebDistCompress)' != ''">
+    <PropertyGroup>
+      <_GXPFFmpegTools>$([MSBuild]::GetDirectoryNameOfFileAbove('$(MSBuildProjectDirectory)', '.tools/ffmpeg/bin/ffmpeg.exe'))</_GXPFFmpegTools>
+      <FFmpegPath Condition="'$(FFmpegPath)' == '' and '$(_GXPFFmpegTools)' != ''">$(_GXPFFmpegTools)/.tools/ffmpeg/bin/ffmpeg.exe</FFmpegPath>
+    </PropertyGroup>
+    <Exec Condition="'$(FFmpegPath)' == ''" Command="ffmpeg -hide_banner -version" EchoOff="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="_GXPFFmpegOnPath" />
+    </Exec>
+    <PropertyGroup>
+      <FFmpegPath Condition="'$(FFmpegPath)' == '' and '$(_GXPFFmpegOnPath)' == '0'">ffmpeg</FFmpegPath>
+    </PropertyGroup>
+    <Warning Condition="'$(FFmpegPath)' == ''" Text="ffmpeg not found: dist/ keeps the original WAV files listed in WebDistCompress. Install ffmpeg (e.g. winget install Gyan.FFmpeg) or pass -p:FFmpegPath=... to ship them as MP3." />
+  </Target>
+
+  <Target Name="_GXPCollectCompress" DependsOnTargets="_GXPFindFFmpeg" Condition="'$(WebDist)' == 'true' and '@(WebDistCompress)' != ''">
+    <PropertyGroup>
+      <_GXPAudioCache>$(MSBuildProjectDirectory)\obj\web-audio\</_GXPAudioCache>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(FFmpegPath)' != ''">
+      <_GXPCompress Include="@(WebDistCompress->'%(FullPath)')">
+        <ContentPath>$([MSBuild]::MakeRelative('$(GameContentDir)', '%(FullPath)'))</ContentPath>
+      </_GXPCompress>
+      <_GXPCompress>
+        <Mp3Path>$([System.IO.Path]::ChangeExtension('%(ContentPath)', '.mp3'))</Mp3Path>
+      </_GXPCompress>
+    </ItemGroup>
+  </Target>
+
+  <!-- Converts each WAV once; later builds only redo files that changed. -->
+  <Target Name="_GXPCompressAudio" DependsOnTargets="_GXPCollectCompress" Condition="'$(WebDist)' == 'true' and '@(WebDistCompress)' != ''"
+          Inputs="@(_GXPCompress)" Outputs="@(_GXPCompress->'$(_GXPAudioCache)%(Mp3Path)')">
+    <MakeDir Directories="@(_GXPCompress->'$(_GXPAudioCache)%(Mp3Path)'->'%(RootDir)%(Directory)')" />
+    <Exec Command="&quot;$(FFmpegPath)&quot; -hide_banner -loglevel error -y -i &quot;%(_GXPCompress.FullPath)&quot; -codec:a libmp3lame -q:a 4 &quot;$(_GXPAudioCache)%(_GXPCompress.Mp3Path)&quot;" />
+  </Target>
+
+  <!-- After publishing: write the playable site (web/, or dist/ with WebDist=true). -->
+  <Target Name="GXPWriteWebSite" AfterTargets="Publish" DependsOnTargets="_GXPCompressAudio">
+    <PropertyGroup>
+      <_GXPOut>$(WebOutDir)</_GXPOut>
+      <_GXPOut Condition="'$(WebDist)' == 'true'">$(WebDistDir)</_GXPOut>
+      <_GXPOut>$([MSBuild]::EnsureTrailingSlash('$(_GXPOut)'))</_GXPOut>
+      <_GXPWasm>$(PublishDir)$(AssemblyName).wasm</_GXPWasm>
+      <_GXPTitle>$(GameTitle)</_GXPTitle>
+      <_GXPTitle Condition="'$(_GXPTitle)' == ''">$(AssemblyName)</_GXPTitle>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_GXPWasm)')" Text="Expected the published module at $(_GXPWasm)." />
+
+    <ItemGroup>
+      <_GXPHost Include="$(GXPEngineDir)host\**\*" Exclude="$(GXPEngineDir)host\index.html" />
+      <_GXPContent Include="$(GameContentDir)**\*" Exclude="@(GameData);@(WebContentExclude)" />
+      <_GXPContent Remove="@(_GXPCompress->'%(Identity)')" />
+      <_GXPContent>
+        <ContentPath>$([MSBuild]::MakeRelative('$(GameContentDir)', '%(FullPath)'))</ContentPath>
+      </_GXPContent>
+      <_GXPPublished Include="@(_GXPContent->'%(ContentPath)')" />
+      <_GXPPublished Include="@(_GXPCompress->'%(Mp3Path)')" />
+    </ItemGroup>
+
+    <RemoveDir Condition="'$(WebDist)' == 'true'" Directories="$(_GXPOut)" />
+    <Copy SourceFiles="@(_GXPHost)" DestinationFiles="@(_GXPHost->'$(_GXPOut)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_GXPWasm)" DestinationFiles="$(_GXPOut)wasm\game.wasm" />
+    <Copy SourceFiles="@(_GXPContent)" DestinationFiles="@(_GXPContent->'$(_GXPOut)content\%(ContentPath)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_GXPCompress->'$(_GXPAudioCache)%(Mp3Path)')" DestinationFiles="@(_GXPCompress->'$(_GXPOut)content\%(Mp3Path)')" SkipUnchangedFiles="true" />
+
+    <GXPWriteWebFiles PageTemplate="$(GXPEngineDir)host\index.html" PageOutput="$(_GXPOut)index.html"
+                      ManifestOutput="$(_GXPOut)content\manifest.json" ContentFiles="@(_GXPPublished)"
+                      Title="$(_GXPTitle)" Description="$(GameDescription)" Icon="$(GameIcon)" Cover="$(GameCover)"
+                      ControlsFile="$(GameControlsFile)" />
+
+    <Message Importance="high" Condition="'$(WebDist)' != 'true'" Text="Web build: $(_GXPOut) (serve this folder and open index.html)" />
+    <Message Importance="high" Condition="'$(WebDist)' == 'true'" Text="Portfolio build: $(_GXPOut) (copy this folder to your site and embed its index.html in an iframe)" />
+  </Target>
+</Project>

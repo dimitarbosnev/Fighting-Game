@@ -140,9 +140,9 @@ namespace TiledMapParser {
 				OnObjectCreated += callback;
 			}
 			_manualObjects=new List<string>();
-			// The game and the engine are compiled into one assembly (one wasm module), and
-			// Assembly.GetCallingAssembly is not reliable under NativeAOT.
-			_callingAssembly = typeof(TiledLoader).Assembly;
+			// Objects are created by class name from the game's assembly. Under NativeAOT
+			// Assembly.GetCallingAssembly is not reliable, so use the one the host registered.
+			_callingAssembly = GXPEngine.Web.WebRuntime.GameAssembly ?? (Game.main != null ? Game.main.GetType().Assembly : typeof(TiledLoader).Assembly);
 		}
 
 		/// <summary>

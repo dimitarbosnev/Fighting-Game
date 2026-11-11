@@ -23,7 +23,7 @@ namespace TiledMapParser
 	/// for details.
 	///
 	/// In the browser build levels are embedded in the
-	/// module (see GXPEngine/Levels and AssetPath.OpenLevel), and the XML is read
+	/// module (from the game's Content folder, read through ContentFiles), and the XML is read
 	/// explicitly with LINQ to XML: XmlSerializer generates code at runtime, which
 	/// NativeAOT cannot do. Absent elements leave arrays null, like XmlSerializer did.
 	/// </summary>
@@ -31,7 +31,7 @@ namespace TiledMapParser
 		public static Map ReadMap(string filename) {
 			XDocument document;
 			XmlReaderSettings settings = new XmlReaderSettings { XmlResolver = null, DtdProcessing = DtdProcessing.Ignore };
-			using (Stream stream = GXPEngine.Web.AssetPath.OpenLevel(filename))
+			using (Stream stream = GXPEngine.Web.ContentFiles.OpenRead(filename))
 			using (XmlReader reader = XmlReader.Create(stream, settings)) {
 				document = XDocument.Load(reader);
 			}

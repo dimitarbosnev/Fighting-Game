@@ -6,7 +6,7 @@ namespace GXPEngine.Web
 {
 	/// <summary>
 	/// Functions the JS host provides to the wasm module (the "engine" import module).
-	/// Implemented in js/engine.js, js/renderer_2d.js, js/canvas_2d.js and js/audio.js.
+	/// Implemented in host/js/engine.js, renderer_2d.js, canvas_2d.js and audio.js.
 	/// Strings cross the boundary as UTF-8 (pointer, byte length) pairs.
 	/// </summary>
 	internal static unsafe class Host
@@ -14,7 +14,7 @@ namespace GXPEngine.Web
 		const string Module = "engine";
 
 		// ---------------------------------------------------------------- textures
-		// Returns a texture id at once. Images listed in assets/manifest.json are
+		// Returns a texture id at once. Images listed in content/manifest.json are
 		// preloaded, so their size is known immediately (see TextureSize).
 		[WasmImportLinkage, DllImport(Module, EntryPoint = "load_texture")]
 		static extern uint load_texture(byte* url, int urlLength, uint filter);

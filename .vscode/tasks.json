@@ -2,14 +2,14 @@
     "version": "2.0.0",
     "tasks": [
         {
-            // Builds wasm/game.wasm and copies GXPEngine/Assets to assets/ (see GXPEngine/GXPEngine.csproj).
+            // Builds the game into web/ (serve that folder to play). See GXPEngine/GXPEngine.Web.targets.
             // Uses the repo-local .NET 10 SDK and WASI SDK in .tools/.
             "label": "Build WASM (release)",
             "type": "process",
             "command": "${workspaceFolder}/.tools/dotnet/dotnet.exe",
             "args": [
                 "publish",
-                "${workspaceFolder}/GXPEngine/GXPEngine.csproj",
+                "${workspaceFolder}/Kamisen.csproj",
                 "-c",
                 "Release",
                 "-nologo"
@@ -32,7 +32,7 @@
             "command": "${workspaceFolder}/.tools/dotnet/dotnet.exe",
             "args": [
                 "publish",
-                "${workspaceFolder}/GXPEngine/GXPEngine.csproj",
+                "${workspaceFolder}/Kamisen.csproj",
                 "-c",
                 "Release",
                 "-p:WebDist=true",
@@ -52,7 +52,7 @@
             "command": "${workspaceFolder}/.tools/dotnet/dotnet.exe",
             "args": [
                 "publish",
-                "${workspaceFolder}/GXPEngine/GXPEngine.csproj",
+                "${workspaceFolder}/Kamisen.csproj",
                 "-c",
                 "Debug",
                 "-nologo"

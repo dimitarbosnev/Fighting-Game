@@ -6,7 +6,7 @@ namespace GXPEngine.Core
 {
 	/// <summary>
 	/// A texture owned by the JS renderer, referred to by id. Image files are
-	/// preloaded by the host (from assets/manifest.json), so width and height are
+	/// preloaded by the host (from content/manifest.json), so width and height are
 	/// known as soon as the texture is created. Blank textures (new Texture2D(w, h))
 	/// are canvases that EasyDraw draws into.
 	/// </summary>

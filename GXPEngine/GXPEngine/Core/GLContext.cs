@@ -16,6 +16,7 @@ namespace GXPEngine.Core {
 	///  - renders by converting every quad into a sprite instance for the WebGPU renderer.
 	/// The game's logical size (width/height) is scaled uniformly to fit the canvas
 	/// and centered, with black bars where the aspect ratios differ.
+	/// Viewports (Game.SetViewport, used by Camera windows) clip quads on the CPU.
 	/// </summary>
 	public class GLContext {
 
@@ -51,6 +52,12 @@ namespace GXPEngine.Core {
 		private float _screenScale = 1;
 		private float _screenOffsetX = 0;
 		private float _screenOffsetY = 0;
+
+		// Viewport clipping (SetScissor): logical rectangle (top-left origin) and its canvas-pixel bounds.
+		private bool _scissorEnabled = false;
+		private int _scissorX, _scissorY, _scissorWidth, _scissorHeight;
+		private bool _clipping = false;
+		private float _clipLeft, _clipTop, _clipRight, _clipBottom;
 
 		// Render state: a 2D affine matrix stack (x' = a*x + c*y + tx, y' = b*x + d*y + ty).
 		private float[] _stack = new float[6 * 64];
@@ -116,8 +123,28 @@ namespace GXPEngine.Core {
 		public void SetVSync(bool enableVSync) {
 		}
 
-		/// <summary>Scissoring is not supported by the web renderer; rendering always covers the canvas.</summary>
+		/// <summary>
+		/// Restricts drawing to a rectangle, in logical pixels with OpenGL's bottom-left
+		/// origin (Game.SetViewport converts for you). Covering the whole screen turns it off.
+		/// Clipping happens per quad on the CPU, since the web renderer has no scissor test.
+		/// </summary>
 		public void SetScissor(int x, int y, int width, int height) {
+			int screenWidth = WindowSize.instance.width, screenHeight = WindowSize.instance.height;
+			_scissorEnabled = !(x <= 0 && y <= 0 && x + width >= screenWidth && y + height >= screenHeight);
+			_scissorX = x;
+			_scissorY = screenHeight - y - height; // to top-left origin
+			_scissorWidth = width;
+			_scissorHeight = height;
+			UpdateClip();
+		}
+
+		// The scissor rectangle in canvas pixels, for EmitQuad.
+		void UpdateClip() {
+			_clipping = _scissorEnabled;
+			_clipLeft = _scissorX * _screenScale + _screenOffsetX;
+			_clipTop = _scissorY * _screenScale + _screenOffsetY;
+			_clipRight = (_scissorX + _scissorWidth) * _screenScale + _screenOffsetX;
+			_clipBottom = (_scissorY + _scissorHeight) * _screenScale + _screenOffsetY;
 		}
 
 		/// <summary>Stops the game: no more updates or rendering. The page stays open.</summary>
@@ -194,6 +221,7 @@ namespace GXPEngine.Core {
 			_screenScale = Math.Min(screenWidth / gameWidth, screenHeight / gameHeight);
 			_screenOffsetX = (screenWidth - gameWidth * _screenScale) * 0.5f;
 			_screenOffsetY = (screenHeight - gameHeight * _screenScale) * 0.5f;
+			UpdateClip();
 
 			_top = 0;
 			_stack[0] = _screenScale; _stack[1] = 0;
@@ -251,25 +279,135 @@ namespace GXPEngine.Core {
 		/// non-uniformly scaled parent) cannot be represented and is dropped.
 		/// </summary>
 		public void DrawQuad(float[] vertices, float[] uv) {
+			DrawQuad(vertices, 0, uv, 0);
+		}
+
+		/// <summary>
+		/// DrawQuad for quads stored back to back in larger arrays (SpriteBatch):
+		/// 8 floats from vertexOffset and 8 from uvOffset.
+		/// </summary>
+		public void DrawQuad(float[] vertices, int vertexOffset, float[] uv, int uvOffset) {
 			int p = _top;
 			float a = _stack[p], b = _stack[p + 1], c = _stack[p + 2], d = _stack[p + 3], tx = _stack[p + 4], ty = _stack[p + 5];
+			int v = vertexOffset;
 
 			// Corners 0 (top-left), 1 (top-right) and 3 (bottom-left), in canvas pixels.
-			float x0 = a * vertices[0] + c * vertices[1] + tx, y0 = b * vertices[0] + d * vertices[1] + ty;
-			float x1 = a * vertices[2] + c * vertices[3] + tx, y1 = b * vertices[2] + d * vertices[3] + ty;
-			float x3 = a * vertices[6] + c * vertices[7] + tx, y3 = b * vertices[6] + d * vertices[7] + ty;
+			float x0 = a * vertices[v] + c * vertices[v + 1] + tx, y0 = b * vertices[v] + d * vertices[v + 1] + ty;
+			float x1 = a * vertices[v + 2] + c * vertices[v + 3] + tx, y1 = b * vertices[v + 2] + d * vertices[v + 3] + ty;
+			float x3 = a * vertices[v + 6] + c * vertices[v + 7] + tx, y3 = b * vertices[v + 6] + d * vertices[v + 7] + ty;
 
-			float ux = x1 - x0, uy = y1 - y0; // along the quad's top edge
-			float vx = x3 - x0, vy = y3 - y0; // along the quad's left edge
+			EmitQuad(_texture, x0, y0, x1 - x0, y1 - y0, x3 - x0, y3 - y0,
+				uv[uvOffset], uv[uvOffset + 1], uv[uvOffset + 4], uv[uvOffset + 5], _color);
+		}
+
+		/// <summary>
+		/// Draws a solid line, like Gizmos does. With globalCoords the points are in screen
+		/// space (logical game pixels); otherwise in the current transform. The width is in
+		/// logical pixels, at least one canvas pixel. Color is 0xAARRGGBB.
+		/// </summary>
+		public void DrawLine(float x1, float y1, float x2, float y2, uint argb, float width, bool globalCoords = true) {
+			float s = _screenScale;
+			float ax, ay, bx, by;
+			if (globalCoords) {
+				ax = x1 * s + _screenOffsetX; ay = y1 * s + _screenOffsetY;
+				bx = x2 * s + _screenOffsetX; by = y2 * s + _screenOffsetY;
+			} else {
+				int p = _top;
+				float a = _stack[p], b = _stack[p + 1], c = _stack[p + 2], d = _stack[p + 3], tx = _stack[p + 4], ty = _stack[p + 5];
+				ax = a * x1 + c * y1 + tx; ay = b * x1 + d * y1 + ty;
+				bx = a * x2 + c * y2 + tx; by = b * x2 + d * y2 + ty;
+			}
+			float dx = bx - ax, dy = by - ay;
+			float length = (float)Math.Sqrt(dx * dx + dy * dy);
+			if (length == 0) return;
+			// Perpendicular of half the line width (at least one canvas pixel, like GL lines).
+			float half = Math.Max(width * s, 1) * 0.5f;
+			float nx = -dy / length * half, ny = dx / length * half;
+			EmitQuad(0, ax - nx, ay - ny, dx, dy, nx * 2, ny * 2, 0, 0, 1, 1, ArgbToRgba(argb));
+		}
+
+		/// <summary>
+		/// Fills the current viewport (see SetScissor / Game.SetViewport), or the whole
+		/// game screen, with black, like glClear did for camera windows.
+		/// </summary>
+		public void Clear() {
+			float left = _clipping ? _clipLeft : _screenOffsetX;
+			float top = _clipping ? _clipTop : _screenOffsetY;
+			float right = _clipping ? _clipRight : _screenOffsetX + WindowSize.instance.width * _screenScale;
+			float bottom = _clipping ? _clipBottom : _screenOffsetY + WindowSize.instance.height * _screenScale;
+			if (right <= left || bottom <= top) return;
+			WebRuntime.PushInstance(0, (left + right) * 0.5f, (top + bottom) * 0.5f, right - left, bottom - top,
+				0, 0, 1, 1, 0, 0xFF000000);
+		}
+
+		static uint ArgbToRgba(uint argb) {
+			uint a = (argb >> 24) & 0xFF, r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
+			return r | (g << 8) | (b << 16) | (a << 24);
+		}
+
+		/// <summary>
+		/// Emits the parallelogram p0 + s*U + t*V (s, t in 0..1, canvas pixels) as one
+		/// sprite instance, with UV (u0, v0) at s = t = 0 and (u1, v1) at s = t = 1.
+		/// While a viewport is set, axis-aligned quads are cut to it (UVs adjusted),
+		/// and rotated ones are only dropped when entirely outside.
+		/// </summary>
+		void EmitQuad(uint texture, float x0, float y0, float ux, float uy, float vx, float vy,
+			float u0, float v0, float u1, float v1, uint rgba) {
+			if (_clipping && !ClipQuad(ref x0, ref y0, ref ux, ref uy, ref vx, ref vy, ref u0, ref v0, ref u1, ref v1)) return;
+
 			float w = (float)Math.Sqrt(ux * ux + uy * uy);
 			float h = (float)Math.Sqrt(vx * vx + vy * vy);
 			if (w == 0 || h == 0) return;
 			float rotation = (float)Math.Atan2(uy, ux);
 			if (ux * vy - uy * vx < 0) h = -h;
 
-			WebRuntime.PushInstance(_texture,
+			WebRuntime.PushInstance(texture,
 				x0 + (ux + vx) * 0.5f, y0 + (uy + vy) * 0.5f, w, h,
-				uv[0], uv[1], uv[4], uv[5], rotation, _color);
+				u0, v0, u1, v1, rotation, rgba);
+		}
+
+		// Returns false if the quad is entirely outside the clip rectangle.
+		bool ClipQuad(ref float x0, ref float y0, ref float ux, ref float uy, ref float vx, ref float vy,
+			ref float u0, ref float v0, ref float u1, ref float v1) {
+			const float eps = 0.001f;
+			bool uHorizontal = Math.Abs(uy) <= eps * Math.Abs(ux), vVertical = Math.Abs(vx) <= eps * Math.Abs(vy);
+			bool uVertical = Math.Abs(ux) <= eps * Math.Abs(uy), vHorizontal = Math.Abs(vy) <= eps * Math.Abs(vx);
+
+			if (!((uHorizontal && vVertical) || (uVertical && vHorizontal))) {
+				// Rotated: keep it if its bounding box touches the clip rectangle.
+				float minX = x0 + Math.Min(0, ux) + Math.Min(0, vx), maxX = x0 + Math.Max(0, ux) + Math.Max(0, vx);
+				float minY = y0 + Math.Min(0, uy) + Math.Min(0, vy), maxY = y0 + Math.Max(0, uy) + Math.Max(0, vy);
+				return maxX > _clipLeft && minX < _clipRight && maxY > _clipTop && minY < _clipBottom;
+			}
+
+			// Axis-aligned: find the s and t ranges inside the clip rectangle.
+			float sMin = 0, sMax = 1, tMin = 0, tMax = 1;
+			if (uHorizontal) {
+				if (!Range(x0, ux, _clipLeft, _clipRight, ref sMin, ref sMax)) return false;
+				if (!Range(y0, vy, _clipTop, _clipBottom, ref tMin, ref tMax)) return false;
+			} else {
+				if (!Range(y0, uy, _clipTop, _clipBottom, ref sMin, ref sMax)) return false;
+				if (!Range(x0, vx, _clipLeft, _clipRight, ref tMin, ref tMax)) return false;
+			}
+			if (sMin <= 0 && sMax >= 1 && tMin <= 0 && tMax >= 1) return true;
+
+			x0 += sMin * ux + tMin * vx;
+			y0 += sMin * uy + tMin * vy;
+			ux *= sMax - sMin; uy *= sMax - sMin;
+			vx *= tMax - tMin; vy *= tMax - tMin;
+			float du = u1 - u0, dv = v1 - v0;
+			u1 = u0 + du * sMax; u0 += du * sMin;
+			v1 = v0 + dv * tMax; v0 += dv * tMin;
+			return true;
+		}
+
+		// Narrows [min, max] to the parameters where start + t * delta lies in [low, high].
+		static bool Range(float start, float delta, float low, float high, ref float min, ref float max) {
+			if (delta == 0) return start >= low && start <= high;
+			float a = (low - start) / delta, b = (high - start) / delta;
+			min = Math.Max(min, Math.Min(a, b));
+			max = Math.Min(max, Math.Max(a, b));
+			return max > min;
 		}
 
 		//------------------------------------------------------------------------------------------------------------------------

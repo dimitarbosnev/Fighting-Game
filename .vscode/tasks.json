@@ -1,0 +1,33 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "process",
+            "command": "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "args": [
+                "${workspaceFolder}/GXPEngine2023v2/GXPEngine2023/GXPEngine.sln",
+                "-p:Configuration=Debug",
+                "-p:Platform=x86",
+                "-v:minimal",
+                "-nologo"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "run",
+            "type": "process",
+            "command": "${workspaceFolder}/GXPEngine2023v2/GXPEngine2023/GXPEngine/bin/Debug/GXPEngine.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/GXPEngine2023v2/GXPEngine2023/GXPEngine/bin/Debug"
+            },
+            "dependsOn": "build",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

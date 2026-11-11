@@ -1,120 +1,93 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Builds the game to WebAssembly with .NET NativeAOT-LLVM.
+
+      dotnet publish GXPEngine/GXPEngine.csproj -c Release
+
+    Output (paths relative to the repository root, where index.html lives):
+      wasm/game.wasm        the game, engine and level files (Levels/*.tmx are embedded)
+      assets/...            a copy of GXPEngine/Assets, fetched by the JS host at runtime
+      assets/manifest.json  every file under assets/, so the host can preload images and fonts
+
+    Toolchain (installed repo-locally in .tools/, which is gitignored):
+      - .NET 10 SDK in .tools/dotnet (from https://dot.net/v1/dotnet-install.ps1 -Channel 10.0)
+      - WASI SDK 29 in .tools/wasi-sdk, found through WASI_SDK_PATH (defaults to that folder)
+        https://github.com/WebAssembly/wasi-sdk/releases/tag/wasi-sdk-29
+  -->
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
-    <ProductVersion>8.0.30703</ProductVersion>
-    <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>{B5126D4C-7FE0-4552-BC8C-E68D529C22B2}</ProjectGuid>
-    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>GXPEngine</RootNamespace>
     <AssemblyName>GXPEngine</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- The original game code predates these analyzers; keep the build output readable. -->
+    <NoWarn>$(NoWarn);CS0108;CS0114;CS0162;CS0168;CS0169;CS0219;CS0414;CS0649;CS0618;CS8981;IL2026;IL2057;IL2058;IL2065;CA2200;IL2072;IL2075;IL2077;IL2080;IL2104;IL3050;IL3053</NoWarn>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+
+    <!-- NativeAOT-LLVM: a WASI "reactor" module. The JS host owns the frame loop and
+         calls the exports in Web/WebRuntime.cs (_start, engine_layout, engine_frame). -->
+    <OutputType>Library</OutputType>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <NativeLib>Shared</NativeLib>
+    <!-- Plain wasm-ld output: a core module browsers can instantiate, not a WASI component. -->
+    <LinkerFlavor>lld</LinkerFlavor>
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <InvariantTimezone>true</InvariantTimezone>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <!-- Levels are local XML: keep System.Xml from linking in an HTTP client (wasi:http) for external entities. -->
+    <XmlResolverIsNetworkingEnabledByDefault>false</XmlResolverIsNetworkingEnabledByDefault>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+
+    <RepoRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..'))</RepoRoot>
+    <WASI_SDK_PATH Condition="'$(WASI_SDK_PATH)' == ''">$(RepoRoot).tools/wasi-sdk</WASI_SDK_PATH>
+    <WebWasmDir>$(RepoRoot)wasm/</WebWasmDir>
+    <WebAssetsDir>$(RepoRoot)assets/</WebAssetsDir>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
-    <DebugSymbols>True</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>False</Optimize>
-    <OutputPath>bin\Debug</OutputPath>
-    <DefineConstants>DEBUG;</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <PlatformTarget>x86</PlatformTarget>
-    <ConsolePause>False</ConsolePause>
+
+  <PropertyGroup>
+    <IlcLlvmVersion>10.0.0-rc.1.26357.1</IlcLlvmVersion>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
-    <DebugType>none</DebugType>
-    <Optimize>True</Optimize>
-    <OutputPath>bin\Release</OutputPath>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <PlatformTarget>x86</PlatformTarget>
-    <ConsolePause>False</ConsolePause>
-  </PropertyGroup>
-  <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Xml" />
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="$(IlcLlvmVersion)" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="$(IlcLlvmVersion)" />
   </ItemGroup>
+
   <ItemGroup>
-    <Compile Include="Game Files\AttackClass.cs" />
-    <Compile Include="Game Files\Background.cs" />
-    <Compile Include="Game Files\Button.cs" />
-    <Compile Include="Game Files\CharacterArt.cs" />
-    <Compile Include="Game Files\CharacterIcon.cs" />
-    <Compile Include="Game Files\CharacterSelectLevel.cs" />
-    <Compile Include="Game Files\CharacterSelectManager.cs" />
-    <Compile Include="Game Files\Controller2.cs" />
-    <Compile Include="Game Files\GameLevel.cs" />
-    <Compile Include="Game Files\Ground.cs" />
-    <Compile Include="Game Files\HPBar.cs" />
-    <Compile Include="Game Files\HurtBox.cs" />
-    <Compile Include="Game Files\Indication.cs" />
-    <Compile Include="Game Files\InsertCoin.cs" />
-    <Compile Include="Game Files\Orochi.cs" />
-    <Compile Include="Game Files\PauseScreen.cs" />
-    <Compile Include="Game Files\PlayAgainLevel.cs" />
-    <Compile Include="Game Files\PlayerInput.cs" />
-    <Compile Include="Game Files\Level.cs" />
-    <Compile Include="Game Files\Character.cs" />
-    <Compile Include="Game Files\Controller.cs" />
-    <Compile Include="Game Files\Controller1.cs" />
-    <Compile Include="Game Files\PlayerColl.cs" />
-    <Compile Include="Game Files\SmallCharacterArt.cs" />
-    <Compile Include="Game Files\SPBar.cs" />
-    <Compile Include="Game Files\StartScreen.cs" />
-    <Compile Include="Game Files\Momo.cs" />
-    <Compile Include="Game Files\TestAnimation.cs" />
-    <Compile Include="Game Files\Timer.cs" />
-    <Compile Include="Game Files\UILevel.cs" />
-    <Compile Include="Game Files\Wall.cs" />
-    <Compile Include="GXPEngine\AddOns\Gizmos.cs" />
-    <Compile Include="GXPEngine\AddOns\SpriteBatch.cs" />
-    <Compile Include="GXPEngine\AddOns\TiledLoader.cs" />
-    <Compile Include="GXPEngine\Tiles.cs" />
-    <Compile Include="MyGame.cs" />
-    <Compile Include="GXPEngine\Core\Canvas.cs" />
-    <Compile Include="GXPEngine\Game.cs" />
-    <Compile Include="GXPEngine\GameObject.cs" />
-    <Compile Include="GXPEngine\Sound.cs" />
-    <Compile Include="GXPEngine\SoundChannel.cs" />
-    <Compile Include="GXPEngine\Sprite.cs" />
-    <Compile Include="GXPEngine\Core\BlendMode.cs" />
-    <Compile Include="GXPEngine\Core\BoxCollider.cs" />
-    <Compile Include="GXPEngine\Core\Collider.cs" />
-    <Compile Include="GXPEngine\Core\GLContext.cs" />
-    <Compile Include="GXPEngine\Core\Rectangle.cs" />
-    <Compile Include="GXPEngine\Core\Texture2D.cs" />
-    <Compile Include="GXPEngine\Core\Transformable.cs" />
-    <Compile Include="GXPEngine\Core\Vector2.cs" />
-    <Compile Include="GXPEngine\FMOD\FMOD.cs" />
-    <Compile Include="GXPEngine\Managers\CollisionManager.cs" />
-    <Compile Include="GXPEngine\Managers\UpdateManager.cs" />
-    <Compile Include="GXPEngine\OpenGL\GL.cs" />
-    <Compile Include="GXPEngine\Pivot.cs" />
-    <Compile Include="GXPEngine\AnimationSprite.cs" />
-    <Compile Include="GXPEngine\Utils\Mathf.cs" />
-    <Compile Include="GXPEngine\Utils\Input.cs" />
-    <Compile Include="GXPEngine\Utils\Key.cs" />
-    <Compile Include="GXPEngine\AddOns\MouseHandler.cs" />
-    <Compile Include="GXPEngine\Utils\Time.cs" />
-    <Compile Include="GXPEngine\Utils\Utils.cs" />
-    <Compile Include="GXPEngine\AddOns\Camera.cs" />
-    <Compile Include="GXPEngine\Managers\HierarchyManager.cs" />
-    <Compile Include="GXPEngine\AddOns\Settings.cs" />
-    <Compile Include="GXPEngine\AddOns\TiledMapParser.cs" />
-    <Compile Include="GXPEngine\AddOns\Window.cs" />
-    <Compile Include="GXPEngine\EasyDraw.cs" />
-    <Compile Include="GXPEngine\Core\Collision.cs" />
-    <Compile Include="GXPEngine\Core\SoundSystem.cs" />
-    <Compile Include="GXPEngine\FMOD\FMODSoundSystem.cs" />
-    <Compile Include="GXPEngine\SoLoud\Soloud.cs" />
-    <Compile Include="GXPEngine\SoLoud\SoloudSoundSystem.cs" />
+    <!-- Tiled creates level objects by class name, and the managers find Update() and
+         OnCollision() by reflection, so nothing in this assembly may be trimmed away. -->
+    <TrimmerRootAssembly Include="$(AssemblyName)" />
+
+    <!-- Levels are compiled into the module; AssetPath.OpenLevel reads them back. -->
+    <EmbeddedResource Include="Levels\**\*.tmx" LogicalName="levels/%(RecursiveDir)%(Filename)%(Extension)" />
+
+    <Compile Remove="bin\**;obj\**" />
+    <None Remove="bin\**;obj\**" />
   </ItemGroup>
-  <!-- Post-build: copy the Assets folder next to the exe (only changed files are copied). -->
-  <Target Name="CopyGameAssets" AfterTargets="Build">
+
+  <!-- After publishing: put game.wasm next to index.html and mirror Assets/ into assets/. -->
+  <Target Name="CopyToWebRoot" AfterTargets="Publish">
     <ItemGroup>
-      <GameAssets Include="$(MSBuildProjectDirectory)\Assets\**\*" />
+      <_GameWasm Include="$(PublishDir)$(AssemblyName).wasm" />
+      <_GameAssets Include="$(MSBuildProjectDirectory)\Assets\**\*" />
+      <_ManifestEntry Include="@(_GameAssets->'%(RecursiveDir)%(Filename)%(Extension)'->Replace('\', '/'))" />
     </ItemGroup>
-    <Copy SourceFiles="@(GameAssets)" DestinationFiles="@(GameAssets->'$(OutDir)Assets\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Error Condition="!Exists('@(_GameWasm)')" Text="Expected the published module at @(_GameWasm)." />
+
+    <Copy SourceFiles="@(_GameWasm)" DestinationFiles="$(WebWasmDir)game.wasm" />
+    <Copy SourceFiles="@(_GameAssets)" DestinationFiles="@(_GameAssets->'$(WebAssetsDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+
+    <PropertyGroup>
+      <_ManifestJson>[
+  &quot;@(_ManifestEntry, '&quot;,
+  &quot;')&quot;
+]</_ManifestJson>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(WebAssetsDir)manifest.json" Lines="$(_ManifestJson)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+
+    <Message Importance="high" Text="Web build: $(WebWasmDir)game.wasm, @(_GameAssets->Count()) assets in $(WebAssetsDir)" />
   </Target>
 </Project>

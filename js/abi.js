@@ -52,8 +52,9 @@ const LAYOUT = {
 
 // Asks the module where the shared structs live and checks it agrees with this file.
 function readLayout(exports, mem) {
+  // Call first: engine_layout may grow wasm memory, which detaches older views.
+  const base = exports.engine_layout() >>> 2
   const u32 = mem.u32
-  const base = exports.engine_layout() >> 2
   const word = (index) => u32[base + index]
 
   for (const [name, index, bytes] of [

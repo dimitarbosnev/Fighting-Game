@@ -1,8 +1,16 @@
-// Odin's js_wasm32 target imports a few runtime helpers from "odin_env"
-// (console output, time, math, randomness). This is a minimal ES-module
-// replacement for that part of Odin's core/sys/wasm/js/odin.js. Only the
-// functions a program actually uses become imports, so if a future Odin
-// version needs a new one, instantiation fails with a LinkError naming it.
+// Loads the game module and provides the runtime imports it needs.
+//
+// Two kinds of module are supported:
+//  - Odin's js_wasm32 target imports a few helpers from "odin_env" (console
+//    output, time, math, randomness). odinEnv() is a minimal replacement for
+//    that part of Odin's core/sys/wasm/js/odin.js.
+//  - .NET NativeAOT-LLVM (wasi-wasm) imports WASI Preview 2 interfaces, which
+//    wasi.js provides. Such a module is a WASI "reactor": it exports
+//    _initialize, which must run before any other export.
+// Only the functions a program actually uses become imports, so a module
+// needing something new fails instantiation with a LinkError naming it.
+
+import { wasiImports } from "./wasi.js";
 
 const decoder = new TextDecoder();
 
@@ -39,17 +47,22 @@ export class WasmMemory {
   }
 }
 
-function odinEnv(mem, recentOutput) {
+// Logs one line of program output and remembers the last few for crash reports.
+function outputLine(recentOutput) {
+  return (fd, line) => {
+    (fd === 2 ? console.error : console.log)(line);
+    recentOutput.push(line);
+    if (recentOutput.length > 10) recentOutput.shift();
+  };
+}
+
+function odinEnv(mem, onLine) {
   const pending = { 1: "", 2: "" }; // fmt writes lines in pieces; log whole lines
   return {
     write(fd, ptr, len) {
       const lines = (pending[fd] + mem.string(ptr, len)).split("\n");
       pending[fd] = lines.pop();
-      for (const line of lines) {
-        (fd === 2 ? console.error : console.log)(line);
-        recentOutput.push(line);
-        if (recentOutput.length > 10) recentOutput.shift();
-      }
+      for (const line of lines) onLine(fd, line);
     },
     trap() { throw new Error("wasm trap"); },
     abort() { throw new Error("wasm abort"); },
@@ -74,9 +87,10 @@ function odinEnv(mem, recentOutput) {
 }
 
 // `hostImports(mem)` returns extra import modules, e.g. { engine: { ... } }.
-// The module is instantiated but not started: call exports._start() to run main().
-// `recentOutput` holds the last lines the program printed. Odin writes panic
-// messages to stdout on this target, so this is where a crash explains itself.
+// The module is instantiated (and, for a WASI reactor, initialized) but not
+// started: call exports._start() to run the game's entry point.
+// `recentOutput` holds the last lines the program printed. Odin and .NET both
+// write crash messages to stdout/stderr, so this is where a crash explains itself.
 export async function loadWasm(url, hostImports = () => ({})) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -84,8 +98,15 @@ export async function loadWasm(url, hostImports = () => ({})) {
   }
   const mem = new WasmMemory();
   const recentOutput = [];
-  const imports = { odin_env: odinEnv(mem, recentOutput), ...hostImports(mem) };
-  const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), imports);
+  const onLine = outputLine(recentOutput);
+  let instance;
+  const imports = {
+    odin_env: odinEnv(mem, onLine),
+    ...wasiImports(mem, () => instance.exports, onLine),
+    ...hostImports(mem),
+  };
+  ({ instance } = await WebAssembly.instantiate(await response.arrayBuffer(), imports));
   mem.attach(instance.exports.memory);
+  instance.exports._initialize?.();
   return { exports: instance.exports, mem, recentOutput };
 }

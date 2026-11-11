@@ -1,47 +1,67 @@
 using System;
-using System.Collections;
-
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Drawing.Drawing2D;
-
-using GXPEngine.OpenGL;
+using System.Collections.Generic;
+using GXPEngine.Web;
 
 namespace GXPEngine.Core
 {
+	/// <summary>
+	/// A texture owned by the JS renderer, referred to by id. Image files are
+	/// preloaded by the host (from assets/manifest.json), so width and height are
+	/// known as soon as the texture is created. Blank textures (new Texture2D(w, h))
+	/// are canvases that EasyDraw draws into.
+	/// </summary>
 	public class Texture2D
 	{
-		private static Hashtable LoadCache = new Hashtable();
+		private static Dictionary<string, Texture2D> LoadCache = new Dictionary<string, Texture2D>();
 		private static Texture2D lastBound = null;
-		
-		const int UNDEFINED_GLTEXTURE 	= 0;
-		
-		private Bitmap _bitmap;
-		private int[] _glTexture;
+
+		private uint _id;
+		private int _width;
+		private int _height;
 		private string _filename = "";
+		private bool _isCanvas;
+		private bool _freed;
 		private int count = 0;
 		private bool stayInCache = false;
 
 		//------------------------------------------------------------------------------------------------------------------------
 		//														Texture2D()
 		//------------------------------------------------------------------------------------------------------------------------
+		/// <summary>Creates a blank (transparent) canvas texture.</summary>
 		public Texture2D (int width, int height) {
 			if (width == 0) if (height == 0) return;
-			SetBitmap (new Bitmap(width, height));
+			_id = Host.CanvasCreate(width, height, Filter);
+			_width = width;
+			_height = height;
+			_isCanvas = true;
 		}
+
 		public Texture2D (string filename) {
 			Load (filename);
 		}
-		public Texture2D (Bitmap bitmap) {
-			SetBitmap (bitmap);
+
+		/// <summary>Creates a canvas texture initialized with a copy of an image file.</summary>
+		public static Texture2D CreateCanvasFromImage(string filename) {
+			Texture2D texture = new Texture2D(0, 0);
+			texture._id = Host.CanvasCreateFromImage(AssetPath.Url(filename), Filter);
+			Host.TextureSize(texture._id, out texture._width, out texture._height);
+			if (texture._width <= 0 || texture._height <= 0) {
+				throw new Exception("Image " + filename + " cannot be found.");
+			}
+			texture._isCanvas = true;
+			return texture;
+		}
+
+		static uint Filter {
+			get { return Game.main != null && Game.main.PixelArt ? 1u : 0u; } // 0 linear, 1 nearest
 		}
 
 		//------------------------------------------------------------------------------------------------------------------------
 		//														GetInstance()
 		//------------------------------------------------------------------------------------------------------------------------
 		public static Texture2D GetInstance (string filename, bool keepInCache=false) {
-			Texture2D tex2d = LoadCache[filename] as Texture2D;
-			if (tex2d == null) {
+			Texture2D tex2d;
+			if (!LoadCache.TryGetValue(filename, out tex2d)) {
 				tex2d = new Texture2D(filename);
 				LoadCache[filename] = tex2d;
 			}
@@ -50,67 +70,67 @@ namespace GXPEngine.Core
 			return tex2d;
 		}
 
-
 		//------------------------------------------------------------------------------------------------------------------------
 		//														RemoveInstance()
 		//------------------------------------------------------------------------------------------------------------------------
 		public static void RemoveInstance (string filename)
 		{
-			if (LoadCache.ContainsKey (filename)) {
-				Texture2D tex2D = LoadCache[filename] as Texture2D;
+			Texture2D tex2D;
+			if (LoadCache.TryGetValue(filename, out tex2D)) {
 				tex2D.count --;
-				if (tex2D.count == 0 && !tex2D.stayInCache) LoadCache.Remove (filename);
+				if (tex2D.count == 0 && !tex2D.stayInCache) {
+					LoadCache.Remove (filename);
+					tex2D.Free();
+				}
 			}
 		}
 
 		public void Dispose () {
 			if (_filename != "") {
 				Texture2D.RemoveInstance (_filename);
+			} else if (_isCanvas) {
+				Free();
 			}
 		}
 
-		//------------------------------------------------------------------------------------------------------------------------
-		//														bitmap
-		//------------------------------------------------------------------------------------------------------------------------
-		public Bitmap bitmap {
-			get { return _bitmap; }
+		void Free() {
+			if (_freed || _id == 0) return;
+			_freed = true;
+			Host.TextureFree(_id);
+			if (lastBound == this) lastBound = null;
 		}
-		
-		//------------------------------------------------------------------------------------------------------------------------
-		//														filename
-		//------------------------------------------------------------------------------------------------------------------------
+
+		/// <summary>The renderer's id for this texture.</summary>
+		public uint id {
+			get { return _id; }
+		}
+
 		public string filename {
 			get { return _filename; }
 		}
-		
-		//------------------------------------------------------------------------------------------------------------------------
-		//														width
-		//------------------------------------------------------------------------------------------------------------------------
+
 		public int width {
-			get { return _bitmap.Width; }
+			get { return _width; }
 		}
 
-		//------------------------------------------------------------------------------------------------------------------------
-		//														height
-		//------------------------------------------------------------------------------------------------------------------------
 		public int height {
-			get { return _bitmap.Height; }
+			get { return _height; }
+		}
+
+		/// <summary>True for blank and EasyDraw textures, which can be drawn into.</summary>
+		public bool isCanvas {
+			get { return _isCanvas; }
 		}
 
 		//------------------------------------------------------------------------------------------------------------------------
 		//														Bind()
 		//------------------------------------------------------------------------------------------------------------------------
 		public void Bind() {
-			if (lastBound == this) return;
+			GLContext.current?.BindTexture(_id);
 			lastBound = this;
-			GL.BindTexture(GL.TEXTURE_2D, _glTexture[0]);
 		}
 
-		//------------------------------------------------------------------------------------------------------------------------
-		//														Unbind()
-		//------------------------------------------------------------------------------------------------------------------------
 		public void Unbind() {
-			//GL.BindTexture (GL.TEXTURE_2D, 0);
 		}
 
 		//------------------------------------------------------------------------------------------------------------------------
@@ -118,101 +138,36 @@ namespace GXPEngine.Core
 		//------------------------------------------------------------------------------------------------------------------------
 		private void Load(string filename) {
 			_filename = filename;
-			Bitmap bitmap;
-			try {
-				bitmap = new Bitmap(filename);
-			} catch {
-				throw new Exception("Image " + filename + " cannot be found.");
+			_id = Host.LoadTexture(AssetPath.Url(filename), Filter);
+			Host.TextureSize(_id, out _width, out _height);
+			if (_width <= 0 || _height <= 0) {
+				throw new Exception("Image " + filename + " cannot be found. (Expected at " + AssetPath.Url(filename) + ")");
 			}
-			SetBitmap(bitmap);
 		}
 
-		//------------------------------------------------------------------------------------------------------------------------
-		//														SetBitmap()
-		//------------------------------------------------------------------------------------------------------------------------
-		private void SetBitmap(Bitmap bitmap) {
-			_bitmap = bitmap;
-			CreateGLTexture ();
-		}
-
-		//------------------------------------------------------------------------------------------------------------------------
-		//														CreateGLTexture()
-		//------------------------------------------------------------------------------------------------------------------------
-		private void CreateGLTexture ()
-		{
-			if (_glTexture != null)
-				if (_glTexture.Length > 0)
-					if (_glTexture[0] != UNDEFINED_GLTEXTURE)
-						destroyGLTexture ();
-				
-			_glTexture = new int[1];
-			if (_bitmap == null)
-				_bitmap = new Bitmap (64, 64);
-
-			GL.GenTextures (1, _glTexture);
-			
-			GL.BindTexture (GL.TEXTURE_2D, _glTexture[0]);
-			if (Game.main.PixelArt) {
-				GL.TexParameteri (GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
-				GL.TexParameteri (GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
-			} else {
-				GL.TexParameteri (GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.LINEAR);
-				GL.TexParameteri (GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.LINEAR);
-			}
-			GL.TexParameteri (GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.GL_CLAMP_TO_EDGE_EXT);
-			GL.TexParameteri (GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.GL_CLAMP_TO_EDGE_EXT);	
-			
-			UpdateGLTexture();
-			GL.BindTexture (GL.TEXTURE_2D, 0);
-			lastBound = null;
-		}
-		
-		//------------------------------------------------------------------------------------------------------------------------
-		//														UpdateGLTexture()
-		//------------------------------------------------------------------------------------------------------------------------
+		/// <summary>No-op: the browser build keeps pixel data on the JS side.</summary>
 		public void UpdateGLTexture() {
-			BitmapData data = _bitmap.LockBits (new System.Drawing.Rectangle (0, 0, _bitmap.Width, _bitmap.Height),
-			                                     ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-			               			
-			GL.BindTexture (GL.TEXTURE_2D, _glTexture[0]);
-			GL.TexImage2D(GL.TEXTURE_2D, 0, GL.RGBA, _bitmap.Width, _bitmap.Height, 0,
-			              GL.BGRA, GL.UNSIGNED_BYTE, data.Scan0);
-			              
-			_bitmap.UnlockBits(data);
-			lastBound = null;
-		}
-
-		//------------------------------------------------------------------------------------------------------------------------
-		//														destroyGLTexture()
-		//------------------------------------------------------------------------------------------------------------------------
-		private void destroyGLTexture() {
-			GL.DeleteTextures(1, _glTexture);
-			_glTexture[0] = UNDEFINED_GLTEXTURE;
 		}
 
 		//------------------------------------------------------------------------------------------------------------------------
 		//														Clone()
 		//------------------------------------------------------------------------------------------------------------------------
+		/// <summary>
+		/// A shallow clone shares the same texture. Deep copies need pixel access,
+		/// which the browser build does not have.
+		/// </summary>
 		public Texture2D Clone (bool deepCopy=false) {
-			Bitmap bitmap;
-			if (deepCopy) {
-				bitmap = _bitmap.Clone () as Bitmap;
-			} else {
-				bitmap = _bitmap;
-			}
+			if (deepCopy) throw new NotSupportedException("Texture2D.Clone(deepCopy: true) is not supported in the browser build.");
 			Texture2D newTexture = new Texture2D(0, 0);
-			newTexture.SetBitmap(bitmap);
+			newTexture._id = _id;
+			newTexture._width = _width;
+			newTexture._height = _height;
 			return newTexture;
 		}
 
+		/// <summary>Texture wrapping is not supported by the web renderer (it always clamps).</summary>
 		public bool wrap {
-			set { 
-				GL.BindTexture (GL.TEXTURE_2D, _glTexture[0]);
-				GL.TexParameteri (GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, value?GL.GL_REPEAT:GL.GL_CLAMP_TO_EDGE_EXT);
-				GL.TexParameteri (GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, value?GL.GL_REPEAT:GL.GL_CLAMP_TO_EDGE_EXT);	
-				GL.BindTexture (GL.TEXTURE_2D, 0);
-				lastBound = null;
-			}
+			set { }
 		}
 
 		public static string GetDiagnostics() {
@@ -222,4 +177,3 @@ namespace GXPEngine.Core
 		}
 	}
 }
-

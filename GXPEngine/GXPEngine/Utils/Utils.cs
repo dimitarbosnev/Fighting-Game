@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing; // For Font
-using System.Drawing.Text; // For PrivateFontCollection
+using System.IO;
 
 namespace GXPEngine
 {
@@ -12,25 +11,14 @@ namespace GXPEngine
 	{
 		static private Random random = new Random();
 
-		static Dictionary<string, PrivateFontCollection> fontIndex=null;
-
 		/// <summary>
-		/// Creates a font from a font file (extension: ttf), with the given point size and font style.
+		/// Returns a font from a .ttf file, for use with EasyDraw.TextFont. In the browser
+		/// build the host registers every .ttf under Assets by its file name before the
+		/// game starts, so this only names that family: "Retro Gaming.ttf" -> "Retro Gaming".
+		/// The size is in points, like System.Drawing.
 		/// </summary>
-		/// <param name="filename">The font file (should be of type .ttf)</param>
-		/// <param name="fontSize">The size in points</param>
-		/// <param name="fontStyle">The font style (pass e.g. FontStyle.Italic|FontStyle.Bold here)</param>
-		/// <returns></returns>
 		public static Font LoadFont(string filename, float fontSize, FontStyle fontStyle = FontStyle.Regular) {
-			if (fontIndex==null) {
-				fontIndex=new Dictionary<string, PrivateFontCollection>();
-			}
-			if (!fontIndex.ContainsKey(filename)) {
-				fontIndex[filename]=new PrivateFontCollection();
-				fontIndex[filename].AddFontFile(filename);
-				//Console.WriteLine("Loaded new font: "+fontIndex[filename].Families[0]);
-			} 
-			return new Font(fontIndex[filename].Families[0], fontSize, fontStyle);
+			return new Font(Path.GetFileNameWithoutExtension(filename), fontSize, fontStyle);
 		}
 		
 		//------------------------------------------------------------------------------------------------------------------------

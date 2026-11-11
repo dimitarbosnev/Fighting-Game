@@ -3,7 +3,6 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title>WebGPU</title>
   <style>
     html,
     body {
@@ -22,11 +21,95 @@
       width: min(100vw, 100vh * 16 / 9);
       height: auto;
     }
+
+    /* Master volume (wired up in js/volume_control.js) */
+    .volume {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px 6px 6px;
+      border-radius: 999px;
+      background: rgba(20, 20, 24, 0.75);
+      color: #eee;
+      font: 13px/1 system-ui, sans-serif;
+      opacity: 0.35;
+      transition: opacity 0.2s;
+      user-select: none;
+    }
+
+    .volume:hover,
+    .volume:focus-within {
+      opacity: 1;
+    }
+
+    .volume button {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+
+    .volume button:hover,
+    .volume button:focus-visible {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .volume svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .volume .waves {
+      transition: opacity 0.15s;
+    }
+
+    .volume[data-muted] .waves {
+      opacity: 0;
+    }
+
+    .volume:not([data-muted]) .cross {
+      display: none;
+    }
+
+    .volume input {
+      width: 110px;
+      accent-color: #4fd17a;
+      cursor: pointer;
+    }
+
+    .volume output {
+      min-width: 3.5ch;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
   </style>
 </head>
 
 <body>
   <canvas id="gameCanvas"></canvas>
+
+  <div class="volume" id="volume">
+    <button type="button" id="volumeMute" aria-label="Mute" title="Mute">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true">
+        <path d="M11 5 6 9H3v6h3l5 4z" fill="currentColor" />
+        <path class="waves" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+        <path class="cross" d="m16 9 6 6M22 9l-6 6" />
+      </svg>
+    </button>
+    <input type="range" id="volumeSlider" min="0" max="100" step="1" value="80" aria-label="Master volume" />
+    <output id="volumeValue" for="volumeSlider">80%</output>
+  </div>
+
   <script type="module" src="js/engine.js"></script>
 </body>
 

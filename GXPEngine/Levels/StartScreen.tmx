@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.8" tiledversion="1.9.2" orientation="orthogonal" renderorder="right-down" width="58" height="28" tilewidth="16" tileheight="16" infinite="0" nextlayerid="5" nextobjectid="4">
+ <imagelayer id="3" name="Image Layer 1">
+  <image source="Assets/Background/starting_background.jpg" width="928" height="444"/>
+ </imagelayer>
+ <objectgroup id="2" name="Object Layer 1">
+  <object id="3" type="InsertCoin" x="336" y="395" width="234" height="44">
+   <properties>
+    <property name="Text" value="Insert Coin"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

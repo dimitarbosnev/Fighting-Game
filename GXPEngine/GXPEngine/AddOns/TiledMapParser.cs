@@ -1,7 +1,10 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Xml;
-using System.Xml.Serialization;
+using System.Xml.Serialization; // attributes only, kept as documentation of the format
+using System.Xml.Linq;
+using System.Collections.Generic;
+using System.Globalization;
 
 namespace TiledMapParser
 {
@@ -18,22 +21,160 @@ namespace TiledMapParser
 	/// (such as geometry objects). See
 	///   http://docs.mapeditor.org/en/stable/reference/tmx-map-format/
 	/// for details.
+	///
+	/// In the browser build levels are embedded in the
+	/// module (see GXPEngine/Levels and AssetPath.OpenLevel), and the XML is read
+	/// explicitly with LINQ to XML: XmlSerializer generates code at runtime, which
+	/// NativeAOT cannot do. Absent elements leave arrays null, like XmlSerializer did.
 	/// </summary>
 	public class MapParser {
-		static XmlSerializer serial = new XmlSerializer (typeof(Map));
-
 		public static Map ReadMap(string filename) {
-			TextReader reader = new StreamReader (filename);
-			Map myMap = serial.Deserialize (reader) as Map;
-			reader.Close ();
-
-			return myMap;
+			XDocument document;
+			XmlReaderSettings settings = new XmlReaderSettings { XmlResolver = null, DtdProcessing = DtdProcessing.Ignore };
+			using (Stream stream = GXPEngine.Web.AssetPath.OpenLevel(filename))
+			using (XmlReader reader = XmlReader.Create(stream, settings)) {
+				document = XDocument.Load(reader);
+			}
+			return ReadMap(document.Root);
 		}
 
-		public static void WriteMap(string filename, Map map) {
-			TextWriter writer = new StreamWriter (filename);
-			serial.Serialize (writer, map);
-			writer.Close ();
+		static Map ReadMap(XElement e) {
+			Map map = new Map();
+			map.Width = Int(e, "width");
+			map.Height = Int(e, "height");
+			map.Version = Str(e, "version");
+			map.Orientation = Str(e, "orientation");
+			map.RenderOrder = Str(e, "renderorder");
+			map.TileWidth = Int(e, "tilewidth");
+			map.TileHeight = Int(e, "tileheight");
+			map.NextObjectId = Int(e, "nextobjectid");
+			map.TileSets = Array(e, "tileset", ReadTileSet);
+			map.Layers = Array(e, "layer", ReadLayer);
+			map.ObjectGroups = Array(e, "objectgroup", ReadObjectGroup);
+			map.ImageLayers = Array(e, "imagelayer", ReadImageLayer);
+			ReadProperties(e, map);
+			return map;
+		}
+
+		static TileSet ReadTileSet(XElement e) {
+			if (e.Attribute("source") != null) {
+				throw new Exception("The Tiled map contains unembedded tilesets (.tsx files) - please embed them in the map");
+			}
+			TileSet t = new TileSet();
+			t.TileWidth = Int(e, "tilewidth");
+			t.TileHeight = Int(e, "tileheight");
+			t.TileCount = Int(e, "tilecount");
+			t.Columns = Int(e, "columns");
+			t.FirstGId = Int(e, "firstgid");
+			t.Name = Str(e, "name");
+			t.Image = Single(e, "image", ReadImage);
+			return t;
+		}
+
+		static Image ReadImage(XElement e) {
+			Image i = new Image();
+			i.Width = Int(e, "width");
+			i.Height = Int(e, "height");
+			i.FileName = Str(e, "source");
+			return i;
+		}
+
+		static ImageLayer ReadImageLayer(XElement e) {
+			ImageLayer l = new ImageLayer();
+			l.Name = Str(e, "name");
+			l.Image = Single(e, "image", ReadImage);
+			l.offsetX = Float(e, "offsetx", 0);
+			l.offsetY = Float(e, "offsety", 0);
+			l.Opacity = Float(e, "opacity", 1);
+			ReadProperties(e, l);
+			return l;
+		}
+
+		static Layer ReadLayer(XElement e) {
+			Layer l = new Layer();
+			l.Name = Str(e, "name");
+			l.Width = Int(e, "width");
+			l.Height = Int(e, "height");
+			l.Data = Single(e, "data", d => new Data { Encoding = Str(d, "encoding"), innerXML = d.Value });
+			ReadProperties(e, l);
+			return l;
+		}
+
+		static ObjectGroup ReadObjectGroup(XElement e) {
+			ObjectGroup g = new ObjectGroup();
+			g.Name = Str(e, "name");
+			g.Objects = Array(e, "object", ReadObject);
+			ReadProperties(e, g);
+			return g;
+		}
+
+		static TiledObject ReadObject(XElement e) {
+			TiledObject o = new TiledObject();
+			o.ID = Int(e, "id");
+			if (e.Attribute("gid") != null) o.GID = uint.Parse(Str(e, "gid"), CultureInfo.InvariantCulture);
+			o.Rotation = Float(e, "rotation", 0);
+			o.Name = Str(e, "name");
+			o.type = Str(e, "type");
+			o.Class = Str(e, "class");
+			o.Width = Float(e, "width", 0);
+			o.Height = Float(e, "height", 0);
+			o.X = Float(e, "x", 0);
+			o.Y = Float(e, "y", 0);
+			o.textField = Single(e, "text", ReadText);
+			ReadProperties(e, o);
+			return o;
+		}
+
+		static Text ReadText(XElement e) {
+			Text t = new Text();
+			t.font = Str(e, "fontfamily", t.font);
+			t.wrap = Int(e, "wrap", t.wrap);
+			t.bold = Int(e, "bold", t.bold);
+			t.italic = Int(e, "italic", t.italic);
+			t.fontSize = Int(e, "pixelsize", t.fontSize);
+			t.text = e.Value;
+			t.horizontalAlign = Str(e, "halign", t.horizontalAlign);
+			t.verticalAlign = Str(e, "valign", t.verticalAlign);
+			t.color = Str(e, "color", t.color);
+			return t;
+		}
+
+		static void ReadProperties(XElement e, PropertyContainer container) {
+			XElement list = e.Element("properties");
+			if (list == null) return;
+			container.propertyList = new PropertyList();
+			container.propertyList.properties = Array(list, "property", p => new Property {
+				Name = Str(p, "name"),
+				Type = Str(p, "type", "string"),
+				// Multi-line string values are stored as element text instead of an attribute.
+				Value = p.Attribute("value") != null ? Str(p, "value") : p.Value,
+			}) ?? new Property[0];
+		}
+
+		static T[] Array<T>(XElement parent, string name, Func<XElement, T> read) {
+			List<T> items = new List<T>();
+			foreach (XElement child in parent.Elements(name)) items.Add(read(child));
+			return items.Count == 0 ? null : items.ToArray();
+		}
+
+		static T Single<T>(XElement parent, string name, Func<XElement, T> read) where T : class {
+			XElement child = parent.Element(name);
+			return child == null ? null : read(child);
+		}
+
+		static string Str(XElement e, string name, string fallback = null) {
+			XAttribute a = e.Attribute(name);
+			return a == null ? fallback : a.Value;
+		}
+
+		static int Int(XElement e, string name, int fallback = 0) {
+			XAttribute a = e.Attribute(name);
+			return a == null ? fallback : int.Parse(a.Value, CultureInfo.InvariantCulture);
+		}
+
+		static float Float(XElement e, string name, float fallback) {
+			XAttribute a = e.Attribute(name);
+			return a == null ? fallback : float.Parse(a.Value, NumberStyles.Float, CultureInfo.InvariantCulture);
 		}
 	}
 

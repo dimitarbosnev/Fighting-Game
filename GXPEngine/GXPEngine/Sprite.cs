@@ -20,25 +20,6 @@ namespace GXPEngine
 
 		public BlendMode blendMode = null;
 
-		/// <summary>
-		/// Initializes a new instance of the <see cref="GXPEngine.Sprite"/> class.
-		/// Specify a System.Drawing.Bitmap to use. Bitmaps will not be cached.
-		/// </summary>
-		/// <param name='bitmap'>
-		/// Bitmap.
-		/// </param>
-		/// <param name="addCollider">
-		/// If <c>true</c>, this sprite will have a collider that will be added to the collision manager.
-		/// </param> 
-		public Sprite (System.Drawing.Bitmap bitmap, bool addCollider=true) : base(addCollider)
-		{
-			if (Game.main == null) {
-				throw new Exception ("Sprites cannot be created before creating a Game instance.");
-			}
-			name = "BMP" + bitmap.Width + "x" + bitmap.Height;
-			initializeFromTexture(new Texture2D(bitmap));
-		}
-
 		public Sprite(Texture2D texture, bool addCollider = true) : base(addCollider) {
 			if (Game.main == null) {
 				throw new Exception("Sprites cannot be created before creating a Game instance.");

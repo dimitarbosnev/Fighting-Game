@@ -171,6 +171,8 @@ namespace GXPEngine
 		//------------------------------------------------------------------------------------------------------------------------
 		/// <summary>
 		/// Start the game loop. Call this once at the start of your game.
+		/// In the browser build this returns immediately; the page's frame loop then
+		/// drives the game (see Web/WebRuntime.cs).
 		/// </summary>
 		public void Start() {
 			_glContext.Run();

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.8" tiledversion="1.9.2" orientation="orthogonal" renderorder="right-down" width="58" height="34" tilewidth="16" tileheight="16" infinite="0" nextlayerid="8" nextobjectid="20">
+ <tileset firstgid="1" name="Background_layer2" tilewidth="16" tileheight="16" tilecount="174" columns="58">
+  <image source="Assets/Background/Background_layer2.png" width="928" height="48"/>
+ </tileset>
+ <imagelayer id="2" name="Image Layer 1">
+  <image source="Assets/Background/image2.png" width="885" height="561"/>
+ </imagelayer>
+ <objectgroup id="4" name="Colliders">
+  <object id="1" name="Wall" type="Wall" x="-36" y="-2.41821" width="56" height="544"/>
+  <object id="8" name="Wall" type="Wall" x="908" y="0" width="56" height="544"/>
+  <object id="4" name="Ground" type="Ground" x="-13.3333" y="512" width="940.816" height="34"/>
+ </objectgroup>
+ <objectgroup id="6" name="HealthBars">
+  <object id="14" type="HPBar" x="416" y="16" width="-315" height="43">
+   <properties>
+    <property name="Inverted" type="bool" value="true"/>
+   </properties>
+  </object>
+  <object id="15" type="HPBar" x="512" y="16" width="315" height="43">
+   <properties>
+    <property name="Inverted" type="bool" value="false"/>
+   </properties>
+  </object>
+  <object id="18" x="124" y="29" width="46" height="16">
+   <text fontfamily="MS Shell Dlg 2" pixelsize="13" wrap="1" halign="center" valign="center">Player 1</text>
+  </object>
+  <object id="19" x="760" y="29" width="46" height="16">
+   <text fontfamily="MS Shell Dlg 2" pixelsize="13" wrap="1" halign="center" valign="center">Player 2</text>
+  </object>
+ </objectgroup>
+ <objectgroup id="7" name="Text"/>
+</map>

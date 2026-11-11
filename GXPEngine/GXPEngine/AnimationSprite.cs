@@ -55,33 +55,6 @@ namespace GXPEngine
 			initializeAnimFrames(cols, rows, frames);
 		}
 		
-		/// <summary>
-		/// Initializes a new instance of the <see cref="GXPEngine.AnimSprite"/> class.
-		/// </summary>
-		/// <param name='bitmap'>
-		/// The Bitmap object to be used to create the sprite. 
-		/// Texture sizes should be a power of two: 1, 2, 4, 8, 16, 32, 64 etc.
-		/// The width and height don't need to be the same.
-		/// If you want to load transparent sprites, use .PNG with transparency.
-		/// </param>
-		/// <param name='cols'>
-		/// Number of columns in the animation.
-		/// </param>
-		/// <param name='rows'>
-		/// Number of rows in the animation.
-		/// </param>
-		/// <param name='frames'>
-		/// Optionally, indicate a number of frames. When left blank, defaults to width*height.
-		/// </param>
-		/// <param name="addCollider">
-		/// If <c>true</c>, this sprite will have a collider that will be added to the collision manager.
-		/// </param> 
-		public AnimationSprite (System.Drawing.Bitmap bitmap, int cols, int rows, int frames=-1, bool addCollider=true) : base(bitmap,addCollider)
-		{
-			name = "BMP " + bitmap.Width + "x" + bitmap.Height;
-			initializeAnimFrames(cols, rows, frames);
-		}
-			
 		//------------------------------------------------------------------------------------------------------------------------
 		//														initializeAnimFrames()
 		//------------------------------------------------------------------------------------------------------------------------

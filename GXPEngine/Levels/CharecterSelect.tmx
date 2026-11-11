@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.8" tiledversion="1.9.2" orientation="orthogonal" renderorder="right-down" width="58" height="34" tilewidth="16" tileheight="16" infinite="0" nextlayerid="9" nextobjectid="29">
+ <imagelayer id="7" name="Image Layer 1">
+  <image source="Assets/Background/image0.png" width="928" height="544"/>
+ </imagelayer>
+ <objectgroup id="8" name="Object Layer 3">
+  <object id="26" type="Background" x="0" y="0" width="928" height="544">
+   <properties>
+    <property name="alpha" type="float" value="0.7"/>
+    <property name="visible" type="bool" value="true"/>
+   </properties>
+  </object>
+ </objectgroup>
+ <objectgroup id="6" name="Object Layer 2">
+  <object id="18" type="CharacterArt" x="168" y="280" width="32" height="32"/>
+  <object id="19" type="CharacterArt" x="728" y="280" width="-32" height="32"/>
+ </objectgroup>
+ <objectgroup id="4" name="Object Layer 1">
+  <object id="12" type="CharacterIcon" x="400" y="336" width="64" height="64">
+   <properties>
+    <property name="image" value="Assets/Character Art/player_1_icon.png"/>
+   </properties>
+  </object>
+  <object id="13" type="CharacterIcon" x="464" y="336" width="64" height="64">
+   <properties>
+    <property name="image" value="Assets/Character Art/player_2_icon.png"/>
+   </properties>
+  </object>
+  <object id="15" type="CharacterSelectManager" x="0" y="0"/>
+  <object id="28" x="672" y="16" width="192" height="64">
+   <text fontfamily="Retro Gaming" pixelsize="33" wrap="1" color="#ffffff" halign="center" valign="center">Player 2</text>
+  </object>
+  <object id="27" x="64" y="16" width="192" height="64">
+   <text fontfamily="Retro Gaming" pixelsize="33" wrap="1" color="#ffffff" halign="center" valign="center">Player 1</text>
+  </object>
+ </objectgroup>
+</map>

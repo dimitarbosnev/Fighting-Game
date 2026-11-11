@@ -2,32 +2,47 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build",
+            // Builds wasm/game.wasm and copies GXPEngine/Assets to assets/ (see GXPEngine/GXPEngine.csproj).
+            // Uses the repo-local .NET 10 SDK and WASI SDK in .tools/.
+            "label": "Build WASM (release)",
             "type": "process",
-            "command": "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe",
+            "command": "${workspaceFolder}/.tools/dotnet/dotnet.exe",
             "args": [
-                "${workspaceFolder}/GXPEngine2023v2/GXPEngine2023/GXPEngine.sln",
-                "-p:Configuration=Debug",
-                "-p:Platform=x86",
-                "-v:minimal",
+                "publish",
+                "${workspaceFolder}/GXPEngine/GXPEngine.csproj",
+                "-c",
+                "Release",
                 "-nologo"
             ],
-            "problemMatcher": "$msCompile",
-            "group": "build"
-        },
-        {
-            "label": "run",
-            "type": "process",
-            "command": "${workspaceFolder}/GXPEngine2023v2/GXPEngine2023/GXPEngine/bin/Debug/GXPEngine.exe",
             "options": {
-                "cwd": "${workspaceFolder}/GXPEngine2023v2/GXPEngine2023/GXPEngine/bin/Debug"
+                "env": {
+                    "DOTNET_CLI_TELEMETRY_OPTOUT": "1"
+                }
             },
-            "dependsOn": "build",
-            "problemMatcher": [],
+            "problemMatcher": "$msCompile",
             "group": {
                 "kind": "build",
                 "isDefault": true
             }
+        },
+        {
+            "label": "Build WASM (debug)",
+            "type": "process",
+            "command": "${workspaceFolder}/.tools/dotnet/dotnet.exe",
+            "args": [
+                "publish",
+                "${workspaceFolder}/GXPEngine/GXPEngine.csproj",
+                "-c",
+                "Debug",
+                "-nologo"
+            ],
+            "options": {
+                "env": {
+                    "DOTNET_CLI_TELEMETRY_OPTOUT": "1"
+                }
+            },
+            "problemMatcher": "$msCompile",
+            "group": "build"
         }
     ]
 }

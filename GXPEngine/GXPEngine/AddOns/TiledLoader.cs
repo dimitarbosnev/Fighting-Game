@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using GXPEngine;
 using GXPEngine.Core;
-using System.Drawing;
-using System.Drawing.Text;
+using Color = System.Drawing.Color;
 using System.IO;
 using System.Collections.Generic;
 using System.Reflection;
@@ -141,7 +140,9 @@ namespace TiledMapParser {
 				OnObjectCreated += callback;
 			}
 			_manualObjects=new List<string>();
-			_callingAssembly = Assembly.GetCallingAssembly();
+			// The game and the engine are compiled into one assembly (one wasm module), and
+			// Assembly.GetCallingAssembly is not reliable under NativeAOT.
+			_callingAssembly = typeof(TiledLoader).Assembly;
 		}
 
 		/// <summary>
@@ -182,7 +183,6 @@ namespace TiledMapParser {
 				f = FontStyle.Bold;
 			}
 			message.TextFont(new Font(obj.textField.font, Mathf.Round(obj.textField.fontSize * scaleMultiplier), f, GraphicsUnit.Pixel));
-			message.graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit; //AntiAlias;
 
 			// Set text alignment:
 			message.TextAlign(
